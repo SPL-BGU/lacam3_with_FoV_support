@@ -8,9 +8,9 @@
 #include "instance.hpp"
 
 struct Heuristic {
-  const Instance *ins;
-  DistTable *D;
+    const Instance *ins;
+    DistTable *D;
 
-  Heuristic(const Instance *_ins, DistTable *_D);
-  int get(const Config &C);
+    Heuristic(const Instance *_ins, DistTable *_D);
+    int get(const Config &C);
 };

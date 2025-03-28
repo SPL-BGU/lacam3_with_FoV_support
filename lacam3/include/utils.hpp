@@ -27,12 +27,12 @@ using Time = std::chrono::steady_clock;
 
 // time manager
 struct Deadline {
-  const Time::time_point t_s;
-  const double time_limit_ms;
+    const Time::time_point t_s;
+    const double time_limit_ms;
 
-  Deadline(double _time_limit_ms = 0);
-  double elapsed_ms() const;
-  double elapsed_ns() const;
+    Deadline(double _time_limit_ms = 0);
+    double elapsed_ms() const;
+    double elapsed_ns() const;
 };
 
 double elapsed_ms(const Deadline *deadline);
@@ -52,18 +52,18 @@ void info(const int level, const int verbose);
 template <typename Head, typename... Tail>
 void info(const int level, const int verbose, Head &&head, Tail &&...tail)
 {
-  if (verbose < level) return;
-  std::cout << head;
-  info(level, verbose, std::forward<Tail>(tail)...);
+    if (verbose < level) return;
+    std::cout << head;
+    info(level, verbose, std::forward<Tail>(tail)...);
 }
 
 template <typename... Body>
 void info(const int level, const int verbose, const Deadline *deadline,
           Body &&...body)
 {
-  if (verbose < level) return;
-  std::cout << "elapsed:" << std::setw(6) << elapsed_ms(deadline) << "ms  ";
-  info(level, verbose, (body)...);
+    if (verbose < level) return;
+    std::cout << "elapsed:" << std::setw(6) << elapsed_ms(deadline) << "ms  ";
+    info(level, verbose, (body)...);
 }
 
 std::ostream &operator<<(std::ostream &os, const std::vector<int> &arr);
