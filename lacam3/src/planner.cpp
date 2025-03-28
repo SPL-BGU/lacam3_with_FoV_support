@@ -241,6 +241,20 @@ bool Planner::set_new_config(HNode *H, LNode *L, Config &Q_to)
   if (min_f_val < INT_MAX) {
     auto &Q_win = Q_cands[min_f_val_idx];
     std::copy(Q_win.begin(), Q_win.end(), Q_to.begin());
+    for (int i = 0; i < N; i++) {
+      int i_group = get_agent_group_id(i, ins->k);
+      for (int j = i + 1; j < N; j++) {
+        int j_group = get_agent_group_id(j, ins->k);
+        if (i_group != j_group) {
+          if (in_field_of_view(Q_to[i], Q_to[j], ins->field_of_view_radius)) {
+            std::cout << "Error in Q_to: field of view collision! ("
+                      << Q_to[i]->x << "," << Q_to[i]->y << ") --- ("
+                      << Q_to[j]->x << "," << Q_to[j]->y << ")" << std::endl;
+            exit(1);
+          }
+        }
+      }
+    }
     return true;
   } else {
     return false;

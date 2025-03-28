@@ -26,6 +26,12 @@ int main(int argc, char *argv[])
   program.add_argument("-l", "--log_short")
       .default_value(false)
       .implicit_value(true);
+  program.add_argument("-r", "--field-of-view-radius")
+      .help("Radius of field of view of each agent")
+      .required();
+  program.add_argument("-k", "--mock-agents-num")
+      .help("Number of mock agents for each agent")
+      .required();
 
   // solver parameters
   program.add_argument("--no-all")
@@ -98,8 +104,21 @@ int main(int argc, char *argv[])
   const auto output_name = program.get<std::string>("output");
   const auto log_short = program.get<bool>("log_short");
   const auto N = std::stoi(program.get<std::string>("num"));
-  const auto ins = scen_name.size() > 0 ? Instance(scen_name, map_name, N)
-                                        : Instance(map_name, N, seed);
+  const auto field_of_view_radius =
+      std::stoi(program.get<std::string>("field-of-view-radius"));
+  if (field_of_view_radius < 0) {
+    std::cerr << "field-of-view-radius must be positive or zero" << std::endl;
+    return 1;
+  }
+  const auto k = std::stoi(program.get<std::string>("mock-agents-num"));
+  if (k <= 0) {
+    std::cerr << "k must be positive" << std::endl;
+    return 1;
+  }
+  const auto ins =
+      scen_name.size() > 0
+          ? Instance(scen_name, map_name, N, field_of_view_radius, k)
+          : Instance(map_name, N, seed, field_of_view_radius, k);
   if (!ins.is_valid(1)) return 1;
 
   // solver parameters

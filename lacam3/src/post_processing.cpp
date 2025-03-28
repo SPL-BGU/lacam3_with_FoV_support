@@ -42,6 +42,31 @@ bool is_feasible_solution(const Instance &ins, const Solution &solution,
                j, " at vertex-", v_i_to->id, " at timestep ", t);
           return false;
         }
+        size_t agent_group_id_i = get_agent_group_id(i, ins.k);
+        size_t agent_group_id_j = get_agent_group_id(j, ins.k);
+        if (agent_group_id_i != agent_group_id_j) {
+          // Only if the agent groups are different, the field of view should be
+          // checked.
+          if (t == 1) {
+            // Check t-1 as well so that the starts will also be tested:
+            if (in_field_of_view(v_i_from, v_j_from,
+                                 ins.field_of_view_radius)) {
+              info(1, verbose,
+                   "field of view conflict at v=" +
+                       std::to_string(v_i_from->id) +
+                       ", u=" + std::to_string(v_j_from->id) +
+                       ", t=" + std::to_string(t - 1));
+              return false;
+            }
+          }
+          if (in_field_of_view(v_i_to, v_j_to, ins.field_of_view_radius)) {
+            info(1, verbose,
+                 "validation, field of view conflict at v=" +
+                     std::to_string(v_i_to->id) + ", u=" +
+                     std::to_string(v_j_to->id) + ", t=" + std::to_string(t));
+            return false;
+          }
+        }
         // swap conflicts
         if (v_j_to == v_i_from && v_j_from == v_i_to) {
           info(1, verbose, "edge conflict");

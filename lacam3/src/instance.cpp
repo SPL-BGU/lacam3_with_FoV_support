@@ -6,18 +6,26 @@ Instance::~Instance()
 }
 
 Instance::Instance(Graph *_G, const Config &_starts, const Config &_goals,
-                   uint _N)
-    : G(_G), starts(_starts), goals(_goals), N(_N)
+                   uint _N, int _field_of_view_radius, size_t _k)
+    : G(_G),
+      starts(_starts),
+      goals(_goals),
+      N(_N),
+      field_of_view_radius(_field_of_view_radius),
+      k(_k)
 {
 }
 
 Instance::Instance(const std::string &map_filename,
                    const std::vector<int> &start_indexes,
-                   const std::vector<int> &goal_indexes)
+                   const std::vector<int> &goal_indexes,
+                   int _field_of_view_radius, size_t _k)
     : G(new Graph(map_filename)),
       starts(Config()),
       goals(Config()),
       N(start_indexes.size()),
+      field_of_view_radius(_field_of_view_radius),
+      k(_k),
       delete_graph_after_used(true)
 {
   for (auto k : start_indexes) starts.push_back(G->U[k]);
@@ -29,11 +37,14 @@ static const std::regex r_instance =
     std::regex(R"(\d+\t.+\.map\t\d+\t\d+\t(\d+)\t(\d+)\t(\d+)\t(\d+)\t.+)");
 
 Instance::Instance(const std::string &scen_filename,
-                   const std::string &map_filename, const int _N)
+                   const std::string &map_filename, const int _N,
+                   int _field_of_view_radius, size_t _k)
     : G(new Graph(map_filename)),
       starts(Config()),
       goals(Config()),
       N(_N),
+      field_of_view_radius(_field_of_view_radius),
+      k(_k),
       delete_graph_after_used(true)
 {
   // load start-goal pairs
@@ -68,11 +79,13 @@ Instance::Instance(const std::string &scen_filename,
 }
 
 Instance::Instance(const std::string &map_filename, const int _N,
-                   const int seed)
+                   const int seed, int _field_of_view_radius, size_t _k)
     : G(new Graph(map_filename)),
       starts(Config()),
       goals(Config()),
       N(_N),
+      field_of_view_radius(_field_of_view_radius),
+      k(_k),
       delete_graph_after_used(true)
 {
   auto MT = std::mt19937(seed);
