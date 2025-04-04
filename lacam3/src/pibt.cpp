@@ -102,7 +102,8 @@ bool PIBT::_set_new_config(const Config &Q_from, Config &Q_to,
 {
     bool success = true;
     bool first_agent = true;
-    // setup cache & constraints check
+    std::vector<int> agents_with_constraints;
+    // setup cache and constraints check
     for (auto i = 0; i < N; ++i) {
         // set occupied now
         if (can_occupy(occupied_now, occupied_field_of_view_now, Q_from[i],
@@ -119,7 +120,6 @@ bool PIBT::_set_new_config(const Config &Q_from, Config &Q_to,
                                      ") cannot be occupied by agent " +
                                      std::to_string(i));
         }
-
         // set occupied next
         if (Q_to[i] != nullptr) {
             // vertex collision --- not really necessary, since it is included
@@ -141,6 +141,22 @@ bool PIBT::_set_new_config(const Config &Q_from, Config &Q_to,
                 break;
             }
             occupy(occupied_next, occupied_field_of_view_next, Q_to[i], i);
+            agents_with_constraints.push_back(i);
+        }
+    }
+    if (success) {
+        // move agents that are in the field of view of agents with constraints
+        for (auto i : agents_with_constraints) {
+            std::set<size_t> affected_agents =
+                _set_next_vertex(i, Q_from, Q_to, Q_to[i]);
+            if (affected_agents.empty()) {
+                // failed
+                success = false;
+                break;
+            }
+            // If we have agents with constraints, then they are the ones that
+            // must succeed on moving.
+            first_agent = false;
         }
     }
 
@@ -196,30 +212,6 @@ bool PIBT::_set_new_config(const Config &Q_from, Config &Q_to,
         if (occupied_now[Q_from[i]->id] != NO_AGENT) {
             deoccupy(occupied_now, occupied_field_of_view_now, Q_from[i], i);
         }
-        if (Q_to[i] != nullptr && occupied_next[Q_to[i]->id] != NO_AGENT) {
-            deoccupy(occupied_next, occupied_field_of_view_next, Q_to[i], i);
-        }
-    }
-
-    for (auto i = 0; i < N; ++i) {
-        // set occupied now
-        if (can_occupy(occupied_next, occupied_field_of_view_next, Q_to[i],
-                       i)) {
-            occupy(occupied_next, occupied_field_of_view_next, Q_to[i], i);
-        } else {
-            for (auto j = 0; j < i; j++) {
-                std::cout << "Agent " << j << " is at (" << Q_to[j]->x << ","
-                          << Q_to[j]->y << ")" << std::endl;
-            }
-            throw std::runtime_error(
-                "Failed in Q_to - the node (" + std::to_string(Q_to[i]->x) +
-                "," + std::to_string(Q_to[i]->y) +
-                ") cannot be occupied by agent " + std::to_string(i));
-        }
-    }
-
-    // cleanup
-    for (auto i = 0; i < N; ++i) {
         if (Q_to[i] != nullptr && occupied_next[Q_to[i]->id] != NO_AGENT) {
             deoccupy(occupied_next, occupied_field_of_view_next, Q_to[i], i);
         }
@@ -294,66 +286,12 @@ std::set<size_t> PIBT::funcPIBT(const int i, const Config &Q_from, Config &Q_to)
 
     // main loop
     for (size_t k = 0; k < K + 1; ++k) {
-        std::set<size_t> affected_agents;
-        bool fallback = false;
         auto u = C_next[i][k];
-
-        // avoid vertex conflicts --- not really necessary, since it is included
-        // in the can_occupy function, keeping it for readability.
-        if (occupied_next[u->id] != NO_AGENT) continue;
-
-        const auto j = occupied_now[u->id];
-
-        // avoid swap conflicts with constraints --- needed only when field of
-        // view is 0.
-        if (j != NO_AGENT && Q_to[j] == Q_from[i]) continue;
-
-        // avoid field of view conflicts
-        if (!can_occupy(occupied_next, occupied_field_of_view_next, u, i))
-            continue;
-
-        // reserve next location
-        occupy(occupied_next, occupied_field_of_view_next, u, i);
-        Q_to[i] = u;
-
-        // priority inheritance
-
-        // Move all agents that are in the field of view of the agent in their
-        // current state. This includes the agent (if exists) that is currently
-        // at u. (This can happen only when field of view is 0).
-        std::set<size_t> agents_viewing_u_now =
-            occupied_field_of_view_now[u->id].get_agents_occupied();
-        for (size_t k : agents_viewing_u_now) {
-            if (i == k) {
-                continue;
-            }
-
-            if (nullptr == Q_to[k]) {
-                std::set<size_t> affected_agents_k = funcPIBT(k, Q_from, Q_to);
-                if (affected_agents_k.empty()) {
-                    fallback = true;
-                    // remove occupation for the next iterations:
-                    deoccupy(occupied_next, occupied_field_of_view_next, u, i);
-                    Q_to[i] = nullptr;
-                    break;  // need to fallback
-                } else {
-                    // Union the sets:
-                    affected_agents.insert(affected_agents_k.begin(),
-                                           affected_agents_k.end());
-                }
-            }
+        std::set<size_t> affected_agents = _set_next_vertex(i, Q_from, Q_to, u);
+        if (!affected_agents.empty()) {
+            // success
+            return affected_agents;
         }
-        if (fallback) {
-            for (size_t k : affected_agents) {
-                deoccupy(occupied_next, occupied_field_of_view_next, Q_to[k],
-                         k);
-                Q_to[k] = nullptr;
-            }
-            continue;
-        }
-        // success to plan next one step
-        affected_agents.insert(i);
-        return affected_agents;
     }
     // Failed to plan the next location for agent a_i, return empty set
     return std::set<size_t>();
@@ -362,6 +300,90 @@ std::set<size_t> PIBT::funcPIBT(const int i, const Config &Q_from, Config &Q_to)
 std::set<size_t> PIBT::_set_next_vertex(const int i, const Config &Q_from,
                                         Config &Q_to, Vertex *u)
 {
+    std::set<size_t> affected_agents;
+    bool fallback = false;
+    bool set_Q_to = Q_to[i] == nullptr;
+    const int j = occupied_now[u->id];
+    std::set<size_t> agents_viewing_u_now =
+        occupied_field_of_view_now[u->id].get_agents_occupied();
+
+    if (!set_Q_to && Q_to[i] != u) {
+        throw std::runtime_error(
+            "The next location for agent " + std::to_string(i) + " is (" +
+            std::to_string(Q_to[i]->x) + "," + std::to_string(Q_to[i]->y) +
+            ") which is not the same as the given location (" +
+            std::to_string(u->x) + "," + std::to_string(u->y) + ").");
+    }
+
+    if (set_Q_to) {
+        // avoid vertex conflicts --- not really necessary, since it is included
+        // in the can_occupy function, keeping it for readability.
+        if (occupied_next[u->id] != NO_AGENT) {
+            goto l_fail;
+        }
+
+        // avoid swap conflicts with constraints --- needed only when field of
+        // view is 0.
+        if (NO_AGENT != j && Q_to[j] == Q_from[i]) {
+            goto l_fail;
+        }
+
+        // avoid field of view conflicts
+        if (!can_occupy(occupied_next, occupied_field_of_view_next, u, i)) {
+            goto l_fail;
+        }
+
+        // reserve next location
+        occupy(occupied_next, occupied_field_of_view_next, u, i);
+        Q_to[i] = u;
+    }
+
+    // priority inheritance
+
+    // Move all agents that are in the field of view of the agent in their
+    // current state. This includes the agent (if exists) that is currently
+    // at u. (This can happen only when field of view is 0).
+    for (size_t k : agents_viewing_u_now) {
+        if (i == k) {
+            continue;
+        }
+
+        if (nullptr == Q_to[k]) {
+            std::set<size_t> affected_agents_k = funcPIBT(k, Q_from, Q_to);
+            if (affected_agents_k.empty()) {
+                fallback = true;
+                break;  // need to fallback
+            } else {
+                // Union the sets:
+                affected_agents.insert(affected_agents_k.begin(),
+                                       affected_agents_k.end());
+            }
+        } else {
+            // if we need to move k, but it has already chosen it's next
+            // location, then we cannot move it, and therefore we need to
+            // fallback.
+            fallback = true;
+            break;
+        }
+    }
+    if (fallback) {
+        // remove occupation for the next iterations:
+        if (set_Q_to) {
+            deoccupy(occupied_next, occupied_field_of_view_next, u, i);
+            Q_to[i] = nullptr;
+        }
+        for (size_t k : affected_agents) {
+            deoccupy(occupied_next, occupied_field_of_view_next, Q_to[k], k);
+            Q_to[k] = nullptr;
+        }
+        goto l_fail;
+    }
+    // success to plan next one step
+    affected_agents.insert(i);
+    return affected_agents;
+
+l_fail:
+    return std::set<size_t>();
 }
 
 int PIBT::is_swap_required_and_possible(const int i, const Config &Q_from,
