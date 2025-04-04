@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(lacam-project CXX)
 
+SET(CMAKE_CXX_FLAGS "-g -rdynamic")
+
 add_subdirectory(./lacam3)
 add_subdirectory(./third_party/argparse)
 
