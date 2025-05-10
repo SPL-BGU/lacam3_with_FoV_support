@@ -103,7 +103,7 @@ void Scatter::construct()
                         // insert new node
                         OPEN.push(std::make_tuple(
                             u, g_v + 1, d_u,
-                            CT.getCollisionCost(v, u, g_v) + c_v, v));
+                            CT.getCollisionCost(i, v, u, g_v) + c_v, v));
                     }
                 }
             }

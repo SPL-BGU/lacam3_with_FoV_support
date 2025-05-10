@@ -125,7 +125,7 @@ Path sipp(const int i, Vertex *s_i, Vertex *g_i, DistTable *D,
                 if (n->v != g_i) {
                     for (auto t = std::max(n->t, si.first - 1);
                          t <= std::min(n->time_end, si.second - 1); ++t) {
-                        if (CT->getCollisionCost(n->v, u, t) == 0) {
+                        if (CT->getCollisionCost(i, n->v, u, t) == 0) {
                             t_earliest = t + 1;
                             break;
                         }
@@ -134,7 +134,7 @@ Path sipp(const int i, Vertex *s_i, Vertex *g_i, DistTable *D,
                     // for goal node -> reverse
                     for (auto t = std::min(n->time_end, si.second - 1);
                          t >= std::max(n->t, si.first - 1); --t) {
-                        if (CT->getCollisionCost(n->v, u, t) == 0) {
+                        if (CT->getCollisionCost(i, n->v, u, t) == 0) {
                             t_earliest = t + 1;
                             break;
                         }
