@@ -1,45 +1,29 @@
 #include "../include/collision_table.hpp"
 
-void initialize_field_of_view(Fields &field_of_view, const Instance *ins)
-{
-    size_t count = get_num_of_agent_groups(ins->N, ins->k);
-    for (size_t i = 0; i < ins->G->size(); ++i) {
-        field_of_view.push_back(CounterWithSize(count));
-    }
-}
-
 CollisionTable::CollisionTable(const Instance *_ins)
     : ins(_ins),
       body(_ins->G->size()),
       body_last(_ins->G->size()),
       collision_cnt(0),
       N(_ins->N),
-      body_field_of_view()
+      body_field_of_view(_ins->G->size()),
+      body_last_field_of_view(_ins->G->size())
 {
-    // Initialize the first timestep.
-    body_field_of_view.push_back(Fields());
-    initialize_field_of_view(body_field_of_view[0], ins);
 }
 
 CollisionTable::~CollisionTable() {}
 
-/**
- * @brief Get amount of agents from different groups in the field of view of the
- * vertex.
- *
- * @param field_of_view The field of view of all vertices.
- * @param i The agent id.
- * @param ins The instance.
- * @param v The vertex to check.
- * @return size_t The amount of agents from different groups in the field of
- * view of the vertex.
- */
-size_t other_groups_count(const Fields &field_of_view, const int i,
-                          const Instance *ins, const Vertex *v)
+int other_groups_count(const std::vector<int> &agents, const int i,
+                       const Instance *ins)
 {
     size_t group_id = get_agent_group_id(i, ins->k);
-    return field_of_view[v->id].size() -
-           field_of_view[v->id].get_agent_group_count(group_id);
+    size_t count = 0;
+    for (auto agent : agents) {
+        if (agent != i && get_agent_group_id(agent, ins->k) != group_id) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 int CollisionTable::getCollisionCost(const int i, const Vertex *v_from,
@@ -63,45 +47,65 @@ int CollisionTable::getCollisionCost(const int i, const Vertex *v_from,
     }
 
     // field of view collision
-    if (t_to < body_field_of_view.size()) {
-        collision += other_groups_count(body_field_of_view[t_to], i, ins, v_to);
-    } else {
-        // If the checked timestep is bigger than all other plans max timestep,
-        // then all agents are considered at their goal and still need to be
-        // checked as if they stay in goal.
-        collision +=
-            other_groups_count(body_field_of_view.back(), i, ins, v_to);
+    if (body_field_of_view[v_to->id].contains(t_to)) {
+        collision += other_groups_count(
+            body_field_of_view[v_to->id].getMap()[t_to], i, ins);
     }
 
     // goal collision
     for (auto last_timestep : body_last[v_to->id]) {
         if (t_to > last_timestep) ++collision;
     }
+
+    // field of view goal collision
+    size_t group_id = get_agent_group_id(i, ins->k);
+    for (auto &[agent, last_timestep] : body_last_field_of_view[v_to->id]) {
+        if (t_to > last_timestep) {
+            if (agent != i && get_agent_group_id(agent, ins->k) != group_id) {
+                ++collision;
+            }
+        }
+    }
+
     return collision;
 }
 
-void occupy_vertex_field_of_view(const Instance *ins, Vertex *v, int agent,
-                                 Fields &field_of_view)
+void occupy_vertex_field_of_view(
+    const Instance *ins, Vertex *v, int agent, int timestep,
+    std::vector<MaxKeyMap<int, std::vector<int>>> &body_field_of_view)
 {
     Vertices field_of_view_vertices =
         get_field_of_view(ins->G, v, ins->field_of_view_radius);
-    size_t group_id = get_agent_group_id(agent, ins->k);
 
     for (const Vertex *current_vertex : field_of_view_vertices) {
-        field_of_view[current_vertex->id].occupy(agent, group_id);
+        // Register field of view
+        if (!body_field_of_view[current_vertex->id].contains(timestep)) {
+            // If the timestep does not exist, create a new entry with an empty
+            // vector.
+            body_field_of_view[current_vertex->id].insert(timestep,
+                                                          std::vector<int>());
+        }
+        body_field_of_view[current_vertex->id].getMap()[timestep].push_back(
+            agent);
     }
 }
 
-void deoccupy_vertex_field_of_view(const Instance *ins, Vertex *v, int agent,
-                                   Fields &field_of_view)
+void deoccupy_vertex_field_of_view(
+    const Instance *ins, Vertex *v, int agent, int timestep,
+    std::vector<MaxKeyMap<int, std::vector<int>>> &body_field_of_view)
 {
     Vertices field_of_view_vertices =
         get_field_of_view(ins->G, v, ins->field_of_view_radius);
-    size_t group_id = get_agent_group_id(agent, ins->k);
 
     for (const Vertex *current_vertex : field_of_view_vertices) {
-        if (field_of_view[current_vertex->id].is_occupied_by_agent(agent)) {
-            field_of_view[current_vertex->id].deoccupy(agent, group_id);
+        std::vector<int> &agents_viewing =
+            body_field_of_view[current_vertex->id].getMap()[timestep];
+        auto it =
+            std::find(agents_viewing.begin(), agents_viewing.end(), agent);
+
+        if (it != agents_viewing.end()) {
+            // Remove the agent from the field of view
+            agents_viewing.erase(it);
         } else {
             throw std::runtime_error(
                 "The vertex is not occupied by the given agent.\n");
@@ -113,13 +117,6 @@ void CollisionTable::enrollPath(const int i, Path &path)
 {
     if (path.empty()) return;
     const auto T_i = path.size() - 1;
-
-    // Add more timesteps if needed to the body_field_of_view.
-    for (auto t = body_field_of_view.size(); t <= T_i; ++t) {
-        // Copy the previous latest field of view, since all other
-        // paths have already ended, and so their agents remain in place.
-        body_field_of_view.emplace_back(body_field_of_view.back());
-    }
 
     for (auto t = 0; t <= T_i; ++t) {
         auto v = path[t];
@@ -133,11 +130,7 @@ void CollisionTable::enrollPath(const int i, Path &path)
         body[v->id][t].push_back(i);
 
         // register field of view
-        occupy_vertex_field_of_view(ins, v, i, body_field_of_view[t]);
-    }
-    for (auto t = T_i + 1; t < body_field_of_view.size(); ++t) {
-        // register field of view for the goal for the rest of the path.
-        occupy_vertex_field_of_view(ins, path[T_i], i, body_field_of_view[t]);
+        occupy_vertex_field_of_view(ins, v, i, t, body_field_of_view);
     }
 
     // goal
@@ -146,22 +139,37 @@ void CollisionTable::enrollPath(const int i, Path &path)
     for (auto t = T_i + 1; t < entry.size(); ++t) {
         collision_cnt += entry[t].size();
     }
+
+    // register field of view for the goal
+    Vertices field_of_view_vertices =
+        get_field_of_view(ins->G, path.back(), ins->field_of_view_radius);
+
+    for (const Vertex *current_vertex : field_of_view_vertices) {
+        // Register field of view
+        body_last_field_of_view[current_vertex->id].emplace_back(i, T_i);
+        // Count collisions for future timesteps (with goal vertex).
+        auto &&entry_field_of_view = body_field_of_view[current_vertex->id];
+        for (auto t = T_i + 1; t <= entry_field_of_view.getMaxKey().value_or(0);
+             ++t) {
+            if (entry_field_of_view.contains(t)) {
+                collision_cnt +=
+                    other_groups_count(entry_field_of_view.getMap()[t], i, ins);
+            }
+        }
+    }
 }
 
 void CollisionTable::clearPath(const int i, Path &path)
 {
     if (path.empty()) return;
     const auto T_i = (int)path.size() - 1;
-    for (auto t = T_i + 1; t < body_field_of_view.size(); ++t) {
-        // remove field of view from goal of the removed path.
-        deoccupy_vertex_field_of_view(ins, path[T_i], i, body_field_of_view[t]);
-    }
+
     for (auto t = 0; t <= T_i; ++t) {
         auto v = path[t];
         auto &&entry = body[v->id][t];
 
         // remove field of view.
-        deoccupy_vertex_field_of_view(ins, v, i, body_field_of_view[t]);
+        deoccupy_vertex_field_of_view(ins, v, i, t, body_field_of_view);
 
         // remove entry
         for (auto itr = entry.begin(); itr != entry.end();) {
@@ -191,5 +199,28 @@ void CollisionTable::clearPath(const int i, Path &path)
     auto &&entry_body = body[path.back()->id];
     for (auto t = T_i + 1; t < entry_body.size(); ++t) {
         collision_cnt -= entry_body[t].size();
+    }
+
+    // remove field of view for the goal
+    Vertices field_of_view_vertices =
+        get_field_of_view(ins->G, path.back(), ins->field_of_view_radius);
+    for (const Vertex *current_vertex : field_of_view_vertices) {
+        // Remove field of view
+        body_last_field_of_view[current_vertex->id].erase(
+            std::remove_if(body_last_field_of_view[current_vertex->id].begin(),
+                           body_last_field_of_view[current_vertex->id].end(),
+                           [i](const std::tuple<int, int> &entry) {
+                               return std::get<0>(entry) == i;
+                           }),
+            body_last_field_of_view[current_vertex->id].end());
+        // Remove collisions for future timesteps (with goal vertex).
+        auto &&entry_field_of_view = body_field_of_view[current_vertex->id];
+        for (auto t = T_i + 1; t <= entry_field_of_view.getMaxKey().value_or(0);
+             ++t) {
+            if (entry_field_of_view.contains(t)) {
+                collision_cnt -=
+                    other_groups_count(entry_field_of_view.getMap()[t], i, ins);
+            }
+        }
     }
 }
