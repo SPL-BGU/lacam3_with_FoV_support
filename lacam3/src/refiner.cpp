@@ -13,8 +13,11 @@ Solution refine(const Instance *ins, const Deadline *deadline,
     auto cost_before = get_sum_of_loss_paths(paths);
     std::vector<int> order(N, 0);
     std::iota(order.begin(), order.end(), 0);
-    auto CT = CollisionTable(ins);
-    for (auto i = 0; i < N; ++i) CT.enrollPath(i, paths[i]);
+    auto CT = CollisionTable(ins, deadline);
+    for (auto i = 0; i < N; ++i) {
+        if (!CT.enrollPath(i, paths[i]))
+            return Solution();  // time limit exceeded
+    }
     std::shuffle(order.begin(), order.end(), MT);
 
     const auto num_refine_agents =
@@ -31,7 +34,8 @@ Solution refine(const Instance *ins, const Deadline *deadline,
         for (auto _i = 0; _i < num_refine_agents; ++_i) {
             const auto i = order[k * num_refine_agents + _i];
             old_cost += get_path_loss(paths[i]);
-            CT.clearPath(i, paths[i]);
+            if (!CT.clearPath(i, paths[i]))
+                return Solution();  // time limit exceeded
         }
 
         // re-planning
@@ -43,7 +47,8 @@ Solution refine(const Instance *ins, const Deadline *deadline,
                                  deadline, old_cost - new_cost - 1);
             if (new_paths[_i].empty()) break;  // failure
             new_cost += get_path_loss(new_paths[_i]);
-            CT.enrollPath(i, new_paths[_i]);
+            if (!CT.enrollPath(i, new_paths[_i]))
+                return Solution();  // time limit exceeded
         }
 
         if (!new_paths[num_refine_agents - 1].empty() && new_cost <= old_cost) {
@@ -56,8 +61,12 @@ Solution refine(const Instance *ins, const Deadline *deadline,
             // failure
             for (auto _i = 0; _i < num_refine_agents; ++_i) {
                 const auto i = order[k * num_refine_agents + _i];
-                if (!new_paths[_i].empty()) CT.clearPath(i, new_paths[_i]);
-                CT.enrollPath(i, paths[i]);
+                if (!new_paths[_i].empty()) {
+                    if (!CT.clearPath(i, new_paths[_i]))
+                        return Solution();  // time limit exceeded
+                }
+                if (!CT.enrollPath(i, paths[i]))
+                    return Solution();  // time limit exceeded
             }
         }
     }

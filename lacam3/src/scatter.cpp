@@ -63,7 +63,7 @@ void Scatter::construct()
             if (!paths[i].empty()) sum_of_path_length -= (paths[i].size() - 1);
 
             // clear cache
-            CT.clearPath(i, paths[i]);
+            if (!CT.clearPath(i, paths[i])) break;  // time limit exceeded
 
             // setup A*
             auto OPEN =
@@ -120,7 +120,7 @@ void Scatter::construct()
             }
 
             // register to CT & update collision count
-            CT.enrollPath(i, paths[i]);
+            if (!CT.enrollPath(i, paths[i])) break;  // time limit exceeded
             sum_of_path_length += paths[i].size() - 1;
 
             // memory management

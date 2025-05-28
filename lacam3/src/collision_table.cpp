@@ -1,7 +1,8 @@
 #include "../include/collision_table.hpp"
 
-CollisionTable::CollisionTable(const Instance *_ins)
+CollisionTable::CollisionTable(const Instance *_ins, const Deadline *_deadline)
     : ins(_ins),
+      deadline(_deadline),
       body(_ins->G->size()),
       body_last(_ins->G->size()),
       collision_cnt(0),
@@ -111,12 +112,13 @@ void deoccupy_vertex_field_of_view(
     }
 }
 
-void CollisionTable::enrollPath(const int i, Path &path)
+bool CollisionTable::enrollPath(const int i, Path &path)
 {
-    if (path.empty()) return;
+    if (path.empty()) return true;
     const auto T_i = path.size() - 1;
 
     for (auto t = 0; t <= T_i; ++t) {
+        if (is_expired(deadline)) return false;  // time limit exceeded
         auto v = path[t];
 
         // update collision count
@@ -143,26 +145,31 @@ void CollisionTable::enrollPath(const int i, Path &path)
         get_field_of_view(ins->G, path.back(), ins->field_of_view_radius);
 
     for (const Vertex *current_vertex : field_of_view_vertices) {
+        if (is_expired(deadline)) return false;  // time limit exceeded
         // Register field of view
         body_last_field_of_view[current_vertex->id].emplace_back(i, T_i);
         // Count collisions for future timesteps (with goal vertex).
         auto &&entry_field_of_view = body_field_of_view[current_vertex->id];
         for (auto t = T_i + 1; t <= entry_field_of_view.getMaxKey().value_or(0);
              ++t) {
+            if (is_expired(deadline)) return false;  // time limit exceeded
             if (entry_field_of_view.contains(t)) {
                 collision_cnt +=
                     other_groups_count(entry_field_of_view.getMap()[t], i, ins);
             }
         }
     }
+
+    return true;
 }
 
-void CollisionTable::clearPath(const int i, Path &path)
+bool CollisionTable::clearPath(const int i, Path &path)
 {
-    if (path.empty()) return;
+    if (path.empty()) return true;
     const auto T_i = (int)path.size() - 1;
 
     for (auto t = 0; t <= T_i; ++t) {
+        if (is_expired(deadline)) return false;  // time limit exceeded
         auto v = path[t];
         auto &&entry = body[v->id][t];
 
@@ -203,6 +210,7 @@ void CollisionTable::clearPath(const int i, Path &path)
     Vertices field_of_view_vertices =
         get_field_of_view(ins->G, path.back(), ins->field_of_view_radius);
     for (const Vertex *current_vertex : field_of_view_vertices) {
+        if (is_expired(deadline)) return false;  // time limit exceeded
         // Remove field of view
         body_last_field_of_view[current_vertex->id].erase(
             std::remove_if(body_last_field_of_view[current_vertex->id].begin(),
@@ -215,10 +223,12 @@ void CollisionTable::clearPath(const int i, Path &path)
         auto &&entry_field_of_view = body_field_of_view[current_vertex->id];
         for (auto t = T_i + 1; t <= entry_field_of_view.getMaxKey().value_or(0);
              ++t) {
+            if (is_expired(deadline)) return false;  // time limit exceeded
             if (entry_field_of_view.contains(t)) {
                 collision_cnt -=
                     other_groups_count(entry_field_of_view.getMap()[t], i, ins);
             }
         }
     }
+    return true;
 }

@@ -26,13 +26,30 @@ struct CollisionTable {
     int N;
 
     const Instance *ins;
+    const Deadline *deadline;
 
-    CollisionTable(const Instance *_ins);
+    CollisionTable(const Instance *_ins, const Deadline *_deadline = nullptr);
     ~CollisionTable();
 
     int getCollisionCost(const int i, const Vertex *v_from, const Vertex *v_to,
                          const int t_from);
-    void enrollPath(const int i, Path &path);
-    void clearPath(const int i, Path &path);
+    /**
+     * @brief Enrolls a path for the agent i.
+     *
+     * @param i The index of the agent.
+     * @param path The path to enroll.
+     * @return true Everything is fine.
+     * @return false Time limit exceeded.
+     */
+    bool enrollPath(const int i, Path &path);
+    /**
+     * @brief Clears the path for the agent i.
+     *
+     * @param i The index of the agent.
+     * @param path The path to clear.
+     * @return true Everything is fine.
+     * @return false Time limit exceeded.
+     */
+    bool clearPath(const int i, Path &path);
     void shrink();
 };
