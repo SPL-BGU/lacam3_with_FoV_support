@@ -13,7 +13,7 @@ CollisionTable::CollisionTable(const Instance *_ins)
 
 CollisionTable::~CollisionTable() {}
 
-int other_groups_count(const std::vector<int> &agents, const int i,
+int other_groups_count(const std::unordered_set<int> &agents, const int i,
                        const Instance *ins)
 {
     size_t group_id = get_agent_group_id(i, ins->k);
@@ -72,7 +72,7 @@ int CollisionTable::getCollisionCost(const int i, const Vertex *v_from,
 
 void occupy_vertex_field_of_view(
     const Instance *ins, Vertex *v, int agent, int timestep,
-    std::vector<MaxKeyMap<int, std::vector<int>>> &body_field_of_view)
+    std::vector<MaxKeyMap<int, std::unordered_set<int>>> &body_field_of_view)
 {
     Vertices field_of_view_vertices =
         get_field_of_view(ins->G, v, ins->field_of_view_radius);
@@ -82,26 +82,24 @@ void occupy_vertex_field_of_view(
         if (!body_field_of_view[current_vertex->id].contains(timestep)) {
             // If the timestep does not exist, create a new entry with an empty
             // vector.
-            body_field_of_view[current_vertex->id].insert(timestep,
-                                                          std::vector<int>());
+            body_field_of_view[current_vertex->id].insert(
+                timestep, std::unordered_set<int>());
         }
-        body_field_of_view[current_vertex->id].getMap()[timestep].push_back(
-            agent);
+        body_field_of_view[current_vertex->id].getMap()[timestep].insert(agent);
     }
 }
 
 void deoccupy_vertex_field_of_view(
     const Instance *ins, Vertex *v, int agent, int timestep,
-    std::vector<MaxKeyMap<int, std::vector<int>>> &body_field_of_view)
+    std::vector<MaxKeyMap<int, std::unordered_set<int>>> &body_field_of_view)
 {
     Vertices field_of_view_vertices =
         get_field_of_view(ins->G, v, ins->field_of_view_radius);
 
     for (const Vertex *current_vertex : field_of_view_vertices) {
-        std::vector<int> &agents_viewing =
+        std::unordered_set<int> &agents_viewing =
             body_field_of_view[current_vertex->id].getMap()[timestep];
-        auto it =
-            std::find(agents_viewing.begin(), agents_viewing.end(), agent);
+        auto it = agents_viewing.find(agent);
 
         if (it != agents_viewing.end()) {
             // Remove the agent from the field of view

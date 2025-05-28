@@ -3,6 +3,8 @@
  */
 #pragma once
 
+#include <unordered_set>
+
 #include "field_of_view.hpp"
 #include "graph.hpp"
 #include "instance.hpp"
@@ -15,7 +17,7 @@ struct CollisionTable {
     std::vector<std::vector<int>> body_last;
     // Using this format to avoid sparse matrix.
     // Vertex, hash_map[timestep -> agents_viewing]
-    std::vector<MaxKeyMap<int, std::vector<int>>> body_field_of_view;
+    std::vector<MaxKeyMap<int, std::unordered_set<int>>> body_field_of_view;
     // The goal setting for the agents.
     // Vertex, vector[<agent_viewing, timestep_of_goal>]
     std::vector<std::vector<std::tuple<int, int>>> body_last_field_of_view;
