@@ -6,7 +6,7 @@
 
 #include <argparse/argparse.hpp>
 #include <iostream>
-#include <lacam.hpp>
+#include <planner_choice.hpp>
 
 void handler(int sig)
 {
@@ -27,6 +27,11 @@ int main(int argc, char *argv[])
     signal(SIGSEGV, handler);  // install our handler
     // arguments parser
     argparse::ArgumentParser program("lacam3", "0.1.0");
+    program.add_argument("-p", "--planner")
+        .help("planner type")
+        .required()
+        .choices("pibt", "lacam")
+        .nargs(1);
     program.add_argument("-m", "--map").help("map file").required();
     program.add_argument("-i", "--scen")
         .help("scenario file")
@@ -41,6 +46,9 @@ int main(int argc, char *argv[])
     program.add_argument("-t", "--time_limit_sec")
         .help("time limit sec")
         .default_value(std::string("3"));
+    program.add_argument("-I", "--max_iter_count")
+        .help("maximum number of iterations in PIBT")
+        .default_value(std::string("10000"));
     program.add_argument("-o", "--output")
         .help("output file")
         .default_value(std::string("./build/result.txt"));
@@ -143,6 +151,15 @@ int main(int argc, char *argv[])
             : Instance(map_name, N, seed, field_of_view_radius, k);
     if (!ins.is_valid(1)) return 1;
 
+    const auto planner_type =
+        get_planner_type(program.get<std::string>("planner"));
+    const auto max_iter_count =
+        std::stoi(program.get<std::string>("max_iter_count"));
+    if (max_iter_count <= 0) {
+        std::cerr << "max_iter_count must be positive" << std::endl;
+        return 1;
+    }
+
     // solver parameters
     const auto flg_no_all = program.get<bool>("no-all");
     Planner::FLG_SWAP = !program.get<bool>("no-swap") && !flg_no_all;
@@ -176,21 +193,24 @@ int main(int argc, char *argv[])
 
     // solve
     const auto deadline = Deadline(time_limit_sec * 1000);
-    const auto solution = solve(ins, verbose - 1, &deadline, seed);
+    bool solution_found = false;
+    const auto solution =
+        solve_with_planner(ins, planner_type, &solution_found, verbose - 1,
+                           &deadline, seed, max_iter_count);
     const auto comp_time_ms = deadline.elapsed_ms();
 
     // failure
-    if (solution.empty()) info(1, verbose, &deadline, "failed to solve");
+    if (!solution_found) info(1, verbose, &deadline, "failed to solve");
 
     // check feasibility
-    if (!is_feasible_solution(ins, solution, verbose)) {
+    if (!is_feasible_solution(ins, solution, solution_found, verbose)) {
         info(0, verbose, &deadline, "invalid solution");
         return 1;
     }
 
     // post processing
     print_stats(verbose, &deadline, ins, solution, comp_time_ms);
-    make_log(ins, solution, output_name, comp_time_ms, map_name, seed,
-             log_short);
+    make_log(ins, solution, solution_found, output_name, comp_time_ms, map_name,
+             seed, log_short);
     return 0;
 }

@@ -14,38 +14,38 @@ int main()
         sol[0] = Config({ins.G->U[0], ins.G->U[8]});
         sol[1] = Config({ins.G->U[1], ins.G->U[0]});
         sol[2] = Config({ins.G->U[9], ins.G->U[1]});
-        assert(is_feasible_solution(ins, sol));
+        assert(is_feasible_solution(ins, sol, true));
 
         // invalid start
         sol[0] = Config({ins.G->U[0], ins.G->U[4]});
         sol[1] = Config({ins.G->U[1], ins.G->U[0]});
         sol[2] = Config({ins.G->U[9], ins.G->U[1]});
-        assert(!is_feasible_solution(ins, sol));
+        assert(!is_feasible_solution(ins, sol, true));
 
         // invalid goal
         sol[0] = Config({ins.G->U[0], ins.G->U[8]});
         sol[1] = Config({ins.G->U[1], ins.G->U[0]});
         sol[2] = Config({ins.G->U[10], ins.G->U[1]});
-        assert(!is_feasible_solution(ins, sol));
+        assert(!is_feasible_solution(ins, sol, true));
 
         // invalid transition
         sol[0] = Config({ins.G->U[0], ins.G->U[8]});
         sol[1] = Config({ins.G->U[4], ins.G->U[0]});
         sol[2] = Config({ins.G->U[9], ins.G->U[1]});
-        assert(!is_feasible_solution(ins, sol));
+        assert(!is_feasible_solution(ins, sol, true));
 
         // swap conflict
         sol[0] = Config({ins.G->U[0], ins.G->U[8]});
         sol[1] = Config({ins.G->U[8], ins.G->U[0]});
         sol[2] = Config({ins.G->U[9], ins.G->U[1]});
-        assert(!is_feasible_solution(ins, sol));
+        assert(!is_feasible_solution(ins, sol, true));
 
         // vertex conflict
         sol[0] = Config({ins.G->U[0], ins.G->U[8]});
         sol[1] = Config({ins.G->U[0], ins.G->U[0]});
         sol[2] = Config({ins.G->U[8], ins.G->U[1]});
         sol.push_back(Config({ins.G->U[9], ins.G->U[1]}));
-        assert(!is_feasible_solution(ins, sol));
+        assert(!is_feasible_solution(ins, sol, true));
     }
 
     {

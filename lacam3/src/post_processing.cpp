@@ -4,8 +4,11 @@
 #include "../include/planner.hpp"
 
 bool is_feasible_solution(const Instance &ins, const Solution &solution,
-                          const int verbose)
+                          const bool solution_found, const int verbose)
 {
+    if (!solution_found) {
+        return true;
+    }
     if (solution.empty()) return true;
 
     // check start locations
@@ -106,8 +109,9 @@ void print_stats(const int verbose, const Deadline *deadline,
 static const std::regex r_map_name = std::regex(R"(.+/(.+))");
 
 void make_log(const Instance &ins, const Solution &solution,
-              const std::string &output_name, const double comp_time_ms,
-              const std::string &map_name, const int seed, const bool log_short)
+              const bool solution_found, const std::string &output_name,
+              const double comp_time_ms, const std::string &map_name,
+              const int seed, const bool log_short)
 {
     // map name
     std::smatch results;
@@ -117,6 +121,9 @@ void make_log(const Instance &ins, const Solution &solution,
 
     // for instance-specific values
     auto dist_table = DistTable(ins);
+    auto sum_of_costs = solution_found ? get_sum_of_costs(solution) : 0;
+    auto makespan = solution_found ? get_makespan(solution) : 0;
+    auto sum_of_loss = solution_found ? get_sum_of_loss(solution) : 0;
 
     // log for visualizer
     auto get_x = [&](int k) { return k % ins.G->width; };
@@ -126,12 +133,12 @@ void make_log(const Instance &ins, const Solution &solution,
     log << "agents=" << ins.N << "\n";
     log << "map_file=" << map_recorded_name << "\n";
     log << "solver=planner\n";
-    log << "solved=" << !solution.empty() << "\n";
-    log << "soc=" << get_sum_of_costs(solution) << "\n";
+    log << "solved=" << solution_found << "\n";
+    log << "soc=" << sum_of_costs << "\n";
     log << "soc_lb=" << get_sum_of_costs_lower_bound(ins, dist_table) << "\n";
-    log << "makespan=" << get_makespan(solution) << "\n";
+    log << "makespan=" << makespan << "\n";
     log << "makespan_lb=" << get_makespan_lower_bound(ins, dist_table) << "\n";
-    log << "sum_of_loss=" << get_sum_of_loss(solution) << "\n";
+    log << "sum_of_loss=" << sum_of_loss << "\n";
     log << "sum_of_loss_lb=" << get_sum_of_costs_lower_bound(ins, dist_table)
         << "\n";
     log << "comp_time=" << comp_time_ms << "\n";

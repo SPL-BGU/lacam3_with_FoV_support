@@ -8,7 +8,8 @@ int main()
         const auto map_filename = "../assets/random-32-32-10.map";
         const auto ins = Instance(scen_filename, map_filename, 3);
         auto solution = solve(ins);
-        assert(is_feasible_solution(ins, solution));
+        bool solution_found = !solution.empty();
+        assert(is_feasible_solution(ins, solution, solution_found));
     }
 
     {
