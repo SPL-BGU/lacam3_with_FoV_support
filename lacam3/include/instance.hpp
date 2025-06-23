@@ -46,3 +46,26 @@ struct Instance {
 
 // solution: a sequence of configurations
 using Solution = std::vector<Config>;
+
+/**
+ * @brief Loads a solution from a file.
+ *
+ * @param ins The instance containing the graph and other parameters.
+ * @param solution The solution to be loaded.
+ * @param solution_file The file containing the solution.
+ * @throws std::runtime_error if the file cannot be opened or the format is
+ * invalid.
+ */
+void load_solution(const Instance &ins, Solution &solution,
+                   const std::string &solution_file);
+
+/**
+ * @brief Create a Solution from a collection of paths.
+ *
+ * @note If a path ends before other paths, fills the rest of it in the
+ * solution's next configs with the last vertex of the path (the goal).
+ *
+ * @param paths The paths to create the solution from.
+ * @return Solution The generated solution.
+ */
+Solution from_paths(const Paths paths);

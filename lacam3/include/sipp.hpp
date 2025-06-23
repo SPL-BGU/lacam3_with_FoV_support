@@ -48,8 +48,27 @@ struct SINodeHasher {
     uint operator()(const SINode &n) const;
 };
 
+class ConflictChecker
+{
+  public:
+    virtual bool is_conflict(const int i, const Vertex *v_from,
+                             const Vertex *v_to, const int t_from) const = 0;
+};
+
+class CollisionTableConflictChecker : public ConflictChecker
+{
+  private:
+    CollisionTable *CT;
+
+  public:
+    CollisionTableConflictChecker(CollisionTable *_CT);
+    bool is_conflict(const int i, const Vertex *v_from, const Vertex *v_to,
+                     const int t_from) const override;
+};
+
 Path sipp(const int i, Vertex *s_i, Vertex *g_i, DistTable *D,
           CollisionTable *CT, const Deadline *deadline = nullptr,
-          const int f_upper_bound = INT_MAX);
+          const int f_upper_bound = INT_MAX,
+          ConflictChecker *conflict_checker = nullptr, SITable *pST = nullptr);
 
 std::ostream &operator<<(std::ostream &os, const SINode *n);

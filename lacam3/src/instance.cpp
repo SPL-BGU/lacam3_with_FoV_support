@@ -127,3 +127,93 @@ bool Instance::is_valid(const int verbose) const
     }
     return true;
 }
+
+// Reads the solution from a .solution file in the format shown in mock.solution
+void load_solution(const Instance &ins, Solution &solution,
+                   const std::string &solution_file)
+{
+    std::ifstream file(solution_file);
+    if (!file) {
+        throw std::runtime_error("Cannot open solution file: " + solution_file);
+    }
+
+    std::string line;
+    bool in_solution_section = false;
+    std::regex timestep_regex(R"(^\d+:(.*),$)");
+    std::regex coord_regex(R"(\((\d+),(\d+)\))");
+
+    while (std::getline(file, line)) {
+        if (!in_solution_section) {
+            if (line == "solution=") {
+                in_solution_section = true;
+            }
+            continue;
+        }
+        if (line.empty()) continue;
+        std::smatch match;
+        if (std::regex_match(line, match, timestep_regex)) {
+            std::string agents_str = match[1];
+            Config config;
+            auto agents_begin = std::sregex_iterator(
+                agents_str.begin(), agents_str.end(), coord_regex);
+            auto agents_end = std::sregex_iterator();
+            for (auto it = agents_begin; it != agents_end; ++it) {
+                int x = std::stoi((*it)[1].str());
+                int y = std::stoi((*it)[2].str());
+                config.push_back(ins.G->U[ins.G->width * y + x]);
+            }
+            // Check if the configuration matches the number of agents
+            if (config.size() != ins.N) {
+                throw std::runtime_error(
+                    "Configuration size does not match the number of agents: " +
+                    std::to_string(config.size()) + " vs " +
+                    std::to_string(ins.N));
+            }
+            solution.push_back(config);
+        } else {
+            // Stop if we reach a line that doesn't match the timestep format
+            throw std::runtime_error("Invalid format in solution file: " +
+                                     line);
+        }
+    }
+
+    if (solution.empty()) {
+        throw std::runtime_error(
+            "No valid configurations found in the solution file.");
+    }
+}
+
+Solution from_paths(const Paths paths)
+{
+    Solution solution;
+
+    if (paths.empty()) {
+        return solution;
+    }
+
+    // Determine the maximum path length (number of timesteps)
+    size_t max_timesteps = 0;
+    for (const auto &path : paths) {
+        if (path.size() > max_timesteps) {
+            max_timesteps = path.size();
+        }
+    }
+
+    // Build the solution timestep by timestep
+    for (size_t t = 0; t < max_timesteps; ++t) {
+        Config config;
+        config.reserve(paths.size());
+
+        for (const auto &path : paths) {
+            if (t < path.size()) {
+                config.push_back(path[t]);
+            } else {
+                config.push_back(path.back());  // pad with goal vertex
+            }
+        }
+
+        solution.push_back(std::move(config));
+    }
+
+    return solution;
+}

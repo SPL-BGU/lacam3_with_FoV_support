@@ -7,7 +7,14 @@ SITable::~SITable() {}
 SIs &SITable::get(Vertex *v)
 {
     auto &b_v = body[v->id];
-    if (!b_v.empty()) return b_v;
+    if (!b_v.empty()) {
+        return b_v;
+    }
+    if (CT == nullptr) {
+        // If no CollisionTable is provided, return an empty SIs,
+        // since it was empty in the initialization.
+        return b_v;
+    }
     auto &entry = CT->body[v->id];
     auto &entry_last = CT->body_last[v->id];
     auto t_last = entry_last.empty()
@@ -61,15 +68,22 @@ uint SINodeHasher::operator()(const SINode &n) const
 
 // minimizing path-loss - not cost!
 Path sipp(const int i, Vertex *s_i, Vertex *g_i, DistTable *D,
-          CollisionTable *CT, const Deadline *deadline, const int f_upper_bound)
+          CollisionTable *CT, const Deadline *deadline, const int f_upper_bound,
+          ConflictChecker *conflict_checker, SITable *pST)
 {
     auto solution_path = Path();
-    auto ST = SITable(CT);  // safe interval table
+    auto ST = pST == nullptr ? SITable(CT) : *pST;  // safe interval table
+    bool free_conflict_checker = false;
 
     // setup goal
     auto &intervals_goal = ST.get(g_i);
     if (intervals_goal.empty()) return solution_path;
     const auto t_goal_after = intervals_goal.back().first - 1;
+
+    if (conflict_checker == nullptr) {
+        conflict_checker = new CollisionTableConflictChecker(CT);
+        free_conflict_checker = true;
+    }
 
     // setup OPEN lists
     auto cmpNodes = [&](SINode *a, SINode *b) {
@@ -114,6 +128,7 @@ Path sipp(const int i, Vertex *s_i, Vertex *g_i, DistTable *D,
         }
 
         // expand neighbors
+
         for (auto &u : n->v->neighbor) {
             for (auto &si : ST.get(u)) {
                 // invalid transition
@@ -125,7 +140,7 @@ Path sipp(const int i, Vertex *s_i, Vertex *g_i, DistTable *D,
                 if (n->v != g_i) {
                     for (auto t = std::max(n->t, si.first - 1);
                          t <= std::min(n->time_end, si.second - 1); ++t) {
-                        if (CT->getCollisionCost(i, n->v, u, t) == 0) {
+                        if (!conflict_checker->is_conflict(i, n->v, u, t)) {
                             t_earliest = t + 1;
                             break;
                         }
@@ -134,7 +149,7 @@ Path sipp(const int i, Vertex *s_i, Vertex *g_i, DistTable *D,
                     // for goal node -> reverse
                     for (auto t = std::min(n->time_end, si.second - 1);
                          t >= std::max(n->t, si.first - 1); --t) {
-                        if (CT->getCollisionCost(i, n->v, u, t) == 0) {
+                        if (!conflict_checker->is_conflict(i, n->v, u, t)) {
                             t_earliest = t + 1;
                             break;
                         }
@@ -165,6 +180,7 @@ Path sipp(const int i, Vertex *s_i, Vertex *g_i, DistTable *D,
         OPEN.pop();
     }
     for (auto iter : EXPLORED) delete iter.second;
+    if (free_conflict_checker) delete conflict_checker;
     return solution_path;
 }
 
@@ -176,4 +192,18 @@ std::ostream &operator<<(std::ostream &os, const SINode *n)
        << ((n->time_end < INT_MAX - 1) ? std::to_string(n->time_end) : "inf")
        << "]";
     return os;
+}
+
+CollisionTableConflictChecker::CollisionTableConflictChecker(
+    CollisionTable *_CT)
+    : CT(_CT)
+{
+}
+
+bool CollisionTableConflictChecker::is_conflict(const int i,
+                                                const Vertex *v_from,
+                                                const Vertex *v_to,
+                                                const int t_from) const
+{
+    return CT->getCollisionCost(i, v_from, v_to, t_from) > 0;
 }

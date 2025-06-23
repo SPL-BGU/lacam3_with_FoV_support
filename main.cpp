@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
     program.add_argument("-p", "--planner")
         .help("planner type")
         .required()
-        .choices("pibt", "lacam")
+        .choices("pibt", "lacam", "k_privacy_post_process")
         .nargs(1);
     program.add_argument("-m", "--map").help("map file").required();
     program.add_argument("-i", "--scen")
@@ -61,6 +61,12 @@ int main(int argc, char *argv[])
     program.add_argument("-k", "--mock-agents-num")
         .help("Number of mock agents for each agent")
         .required();
+    program.add_argument("-S", "--previous-solution")
+        .help("previous solution file for k-privacy post-processing")
+        .default_value(std::string(""));
+    program.add_argument("-O", "--output-temporal-graph")
+        .help("output temporal graph file")
+        .default_value(std::string("./build/temporal_graph.map"));
 
     // solver parameters
     program.add_argument("--no-all")
@@ -159,6 +165,22 @@ int main(int argc, char *argv[])
         std::cerr << "max_iter_count must be positive" << std::endl;
         return 1;
     }
+    const auto previous_solution_file =
+        program.get<std::string>("previous-solution");
+    auto previous_solution = Solution();
+    if (planner_type == PlannerType::KPrivacyPostProcess) {
+        if (previous_solution_file.empty()) {
+            std::cerr
+                << "previous solution file is required for k-privacy post "
+                   "processing"
+                << std::endl;
+            return 1;
+        }
+        // Load the previous solution from the file
+        load_solution(ins, previous_solution, previous_solution_file);
+    }
+    const auto output_temporal_graph =
+        program.get<std::string>("output-temporal-graph");
 
     // solver parameters
     const auto flg_no_all = program.get<bool>("no-all");
@@ -192,20 +214,47 @@ int main(int argc, char *argv[])
         std::stof(program.get<std::string>("checkpoints-duration")) * 1000;
 
     // solve
+    KPrivacyPostProcess *kpp = nullptr;
     const auto deadline = Deadline(time_limit_sec * 1000);
     bool solution_found = false;
-    const auto solution =
-        solve_with_planner(ins, planner_type, &solution_found, verbose - 1,
-                           &deadline, seed, max_iter_count);
+    const auto solution = solve_with_planner(
+        ins, planner_type, &solution_found, verbose - 1, &deadline, seed,
+        max_iter_count, &previous_solution, &kpp);
     const auto comp_time_ms = deadline.elapsed_ms();
 
     // failure
     if (!solution_found) info(1, verbose, &deadline, "failed to solve");
 
     // check feasibility
-    if (!is_feasible_solution(ins, solution, solution_found, verbose)) {
-        info(0, verbose, &deadline, "invalid solution");
-        return 1;
+    if (planner_type == PlannerType::KPrivacyPostProcess) {
+        bool result = true;
+        if (kpp == nullptr) {
+            std::cerr
+                << "KPrivacyPostProcess pointer is null, cannot proceed with "
+                   "post-processing."
+                << std::endl;
+            result = false;
+        }
+        {
+            std::ofstream temporal_graph_file(output_temporal_graph);
+            kpp->print_safe_zones(temporal_graph_file);
+        }
+        if (!kpp->validate_k_privacy_post_process_solution(
+                ins, solution, solution_found, verbose)) {
+            info(0, verbose, &deadline,
+                 "invalid solution after k-privacy post-processing");
+            result = false;
+        }
+        delete kpp;     // Clean up the KPrivacyPostProcess object
+        kpp = nullptr;  // Avoid dangling pointer
+        if (!result) {
+            return 1;  // Exit with error if the solution is not valid
+        }
+    } else {
+        if (!is_feasible_solution(ins, solution, solution_found, verbose)) {
+            info(0, verbose, &deadline, "invalid solution");
+            return 1;
+        }
     }
 
     // post processing
