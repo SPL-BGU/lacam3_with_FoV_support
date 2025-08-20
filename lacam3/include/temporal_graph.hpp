@@ -31,8 +31,9 @@ struct TemporalGraph {
     TemporalVertices V;      // Temporal vertices
     Graph *G;                // Original graph
     int max_timestamp = -1;  // Maximum timestamp in the graph
+    const Instance *ins;
 
-    TemporalGraph(Graph *_G);
+    TemporalGraph(const Instance *_ins);
     TemporalGraph(const TemporalGraph &other);
 
     ~TemporalGraph();
@@ -66,6 +67,18 @@ struct TemporalGraph {
      * the given timestamp.
      */
     double distance_from_safe_zone(const Vertex *v, int timestamp) const;
+
+    /**
+     * @brief Checks if v is in the field of view of any vertex in the safe zone
+     * at the given timestamp.
+     *
+     * @param v The vertex to check.
+     * @param timestamp The timestamp at which to check the safe zone.
+     * @return true If v is in the field of view of any vertex in the safe zone
+     * at the given timestamp.
+     * @return false Otherwise.
+     */
+    bool is_in_field_of_view_of_safe_zone(const Vertex *v, int timestamp) const;
 };
 
 class TemporalGraphConflictChecker : public ConflictChecker

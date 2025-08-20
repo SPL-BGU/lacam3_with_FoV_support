@@ -180,7 +180,7 @@ Vertices get_field_of_view(Graph *g, Vertex *node, int field_radius);
  * @return true - If both nodes are in each others field of view.
  * @return false - Else (not in each others field of view).
  */
-bool in_field_of_view(Vertex *n1, Vertex *n2, int field_radius);
+bool in_field_of_view(const Vertex *n1, const Vertex *n2, int field_radius);
 
 /**
  * @brief Get the agent group id.

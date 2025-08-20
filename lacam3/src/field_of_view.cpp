@@ -20,7 +20,7 @@ Vertices get_field_of_view(Graph *g, Vertex *node, int field_radius)
     return field_of_view;
 }
 
-bool in_field_of_view(Vertex *n1, Vertex *n2, int field_radius)
+bool in_field_of_view(const Vertex *n1, const Vertex *n2, int field_radius)
 {
     int x_diff = std::abs(n1->x - n2->x);
     int y_diff = std::abs(n1->y - n2->y);

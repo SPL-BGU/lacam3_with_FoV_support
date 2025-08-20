@@ -42,7 +42,7 @@ TemporalGraph *KPrivacyPostProcess::get_safe_zones(const Solution &solution,
 
     // Create a new TemporalGraph for safe zones if it is not cached.
 
-    safe_zones = new TemporalGraph(ins->G);
+    safe_zones = new TemporalGraph(ins);
 
     for (size_t t = 0; t < solution.size(); ++t) {
         if (is_expired(deadline)) {
@@ -125,15 +125,35 @@ void KPrivacyPostProcess::initialize_safe_zones_cache(const Solution &solution)
     // Goes over all safe zones and each vertex that is not safe for any
     // agent group is defined safe for the closest agent group.
     // If the vertex's distance from the closet two agent groups (d1 and d2) is
-    // `|d1 - d2| <= 1.5` (For enabling distance also in diagonal moves), or it
-    // is in the field of view of two agent groups - it is not safe for any
-    // agent group, for being fair to all agent groups.
+    // `|d1 - d2| <= sqrt(2 * field_of_view_radius)` (For enabling distance also
+    // in diagonal moves), or it is in the field of view of two agent groups -
+    // it is not safe for any agent group, for being fair to all agent groups.
     for (int t = 0; t < solution.size(); ++t) {
         for (int id = 0; id < ins->G->V.size(); ++id) {
             if (is_expired(deadline)) {
                 return;  // Stop if the deadline is reached
             }
             Vertex *v = ins->G->V[id];
+            int num_of_agent_groups_in_field_of_view = 0;
+
+            for (int i = 0; i < enhanced_safe_zones_list.size(); ++i) {
+                if (is_expired(deadline)) {
+                    return;  // Stop if the deadline is reached
+                }
+                if (num_of_agent_groups_in_field_of_view >= 2) {
+                    break;  // No need to check further if already in field of
+                            // view
+                }
+                TemporalGraph *safe_zones = enhanced_safe_zones_list[i];
+                if (safe_zones->is_in_field_of_view_of_safe_zone(v, t)) {
+                    num_of_agent_groups_in_field_of_view++;
+                }
+            }
+            if (num_of_agent_groups_in_field_of_view >= 2) {
+                continue;  // If the vertex is in the field of view of two agent
+                           // groups, it is not safe for any agent group
+            }
+
             double min_distance = std::numeric_limits<double>::max();
             int closest_agent_group_id = -1;
             double second_min_distance = std::numeric_limits<double>::max();
@@ -167,7 +187,8 @@ void KPrivacyPostProcess::initialize_safe_zones_cache(const Solution &solution)
                 if (second_closest_agent_group_id != -1) {
                     double distance_diff =
                         std::abs(min_distance - second_min_distance);
-                    if (distance_diff <= 1.5) {
+                    if (std::sqrt(2 * ins->field_of_view_radius) >=
+                        distance_diff) {
                         // If the distance difference is within the threshold,
                         // it is not safe for any agent group.
                         continue;

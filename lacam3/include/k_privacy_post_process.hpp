@@ -94,9 +94,9 @@ class KPrivacyPostProcess
      * @details Goes over all safe zones and each vertex that is not safe for
      * any agent group is defined safe for the closest agent group. If the
      * vertex's distance from the closet two agent groups (d1 and d2) is `|d1 -
-     * d2| <= 1.5` (For enabling distance also in diagonal moves), or it is in
-     * the field of view of two agent groups - it is not safe for any agent
-     * group, for being fair to all agent groups.
+     * d2| <= sqrt(2 * field_of_view_radius)` (For enabling distance also in
+     * diagonal moves), or it is in the field of view of two agent groups - it
+     * is not safe for any agent group, for being fair to all agent groups.
      *
      * @example The following example map shows how the safe zones are extended
      * for a specific timestep: A number represents the agent group id that is

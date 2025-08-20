@@ -26,7 +26,8 @@ void TemporalGraph::add_timestep_to_vertex(Vertex *v, int timestamp)
     }
 }
 
-TemporalGraph::TemporalGraph(Graph *_G) : G(_G), V(_G->V.size(), nullptr)
+TemporalGraph::TemporalGraph(const Instance *_ins)
+    : ins(_ins), G(_ins->G), V(_ins->G->V.size(), nullptr)
 {
     for (auto v : G->V) {
         if (v != nullptr) {
@@ -39,7 +40,7 @@ TemporalGraph::TemporalGraph(Graph *_G) : G(_G), V(_G->V.size(), nullptr)
 }
 
 TemporalGraph::TemporalGraph(const TemporalGraph &other)
-    : G(other.G), max_timestamp(other.max_timestamp)
+    : ins(other.ins), G(other.G), max_timestamp(other.max_timestamp)
 {
     V.resize(other.V.size(), nullptr);
     for (size_t i = 0; i < other.V.size(); ++i) {
@@ -100,6 +101,33 @@ SITable TemporalGraph::to_safe_interval_table() const
         safe_interval_table.body[v->vertex->id] = safe_intervals;
     }
     return safe_interval_table;
+}
+
+bool TemporalGraph::is_in_field_of_view_of_safe_zone(const Vertex *v,
+                                                     int timestamp) const
+{
+    if (v == nullptr) {
+        throw std::invalid_argument("The vertex cannot be nullptr.");
+    }
+    if (v->id < 0 || v->id >= V.size()) {
+        throw std::out_of_range("Vertex ID is out of range in TemporalGraph.");
+    }
+    if (timestamp < 0 || timestamp > max_timestamp) {
+        throw std::out_of_range("Timestamp is out of range in TemporalGraph.");
+    }
+
+    // Check if the vertex is in the field of view of any safe zone at the given
+    // timestamp
+    for (const auto &tv : V) {
+        if (tv->timestamps.count(timestamp) > 0) {
+            if (in_field_of_view(tv->vertex, v, ins->field_of_view_radius)) {
+                return true;  // If the vertex is in the field of view of any
+                              // vertex in the safe zone at the given timestamp,
+                              // return true
+            }
+        }
+    }
+    return false;
 }
 
 double TemporalGraph::distance_from_safe_zone(const Vertex *v,
