@@ -33,7 +33,7 @@ class KPrivacyPostProcess
      * @brief A map that caches the safe zones for each agent group id.
      *
      */
-    std::unordered_map<int, TemporalGraph *> safe_zones_cache;
+    std::unordered_map<int, TemporalGraph *> initial_safe_zones_cache;
 
     /**
      * @brief A vector that holds the enhanced safe zones for each agent group.
@@ -43,7 +43,7 @@ class KPrivacyPostProcess
      * group, but are close to the safe zones of the closest agent group.
      *
      */
-    std::vector<TemporalGraph *> enhanced_safe_zones_list;
+    std::vector<TemporalGraph *> extended_safe_zones_list;
 
     /**
      * @brief Get the cached safe zones for the given agent group id.
@@ -54,7 +54,7 @@ class KPrivacyPostProcess
      * @return TemporalGraph* The cached safe zones for the agent group id, or
      * nullptr if not cached.
      */
-    TemporalGraph *_get_safe_zones(int agent_group_id);
+    TemporalGraph *_get_initial_safe_zones(int agent_group_id);
 
   public:
     KPrivacyPostProcess(const Instance *instance, DistTable *_D, int seed = 0,
@@ -65,13 +65,13 @@ class KPrivacyPostProcess
      * @brief Runs a single agent planner to find the shortest path that
      * goes through the safe zones (temporal graph) for the real agent.
      *
-     * @param solution the original solution.
+     * @param safe_zones the safe zones to find shortest path on.
      * @param agent_group_id the group id of the agent.
      * @param real_agent_id the id of the real agent in the group (to refine
      * it's path).
      * @return Path the refined path for the real agent.
      */
-    Path refine_real_agent_path(const Solution &solution, int agent_group_id,
+    Path refine_real_agent_path(TemporalGraph *safe_zones, int agent_group_id,
                                 int real_agent_id);
 
     /**
@@ -83,7 +83,19 @@ class KPrivacyPostProcess
      * @return TemporalGraph* a temporal graph defining the safe zones for the
      * agent's group.
      */
-    TemporalGraph *get_safe_zones(const Solution &solution, int agent_group_id);
+    TemporalGraph *get_initial_safe_zones(const Solution &solution,
+                                          int agent_group_id);
+
+    /**
+     * @brief Returns the extended safe zones of the given agent group.
+     *
+     * @param agent_group_id the group id of the agent.
+     * @return TemporalGraph* a temporal graph defining the safe zones for the
+     * agent's group.
+     * @throw std::runtime_error If it is not initialized using the
+     * initialize_extended_safe_zones_cache function.
+     */
+    TemporalGraph *get_extended_safe_zones(int agent_group_id);
 
     /**
      * @brief Computes and caches the safe zones for all agent groups,
@@ -91,37 +103,15 @@ class KPrivacyPostProcess
      * group. This is done to enable planning more flexible paths for the agents
      * using close but unused vertices.
      *
-     * @details Goes over all safe zones and each vertex that is not safe for
-     * any agent group is defined safe for the closest agent group. If the
-     * vertex's distance from the closet two agent groups (d1 and d2) is `|d1 -
-     * d2| <= sqrt(2 * field_of_view_radius)` (For enabling distance also in
-     * diagonal moves), or it is in the field of view of two agent groups - it
-     * is not safe for any agent group, for being fair to all agent groups.
-     *
-     * @example The following example map shows how the safe zones are extended
-     * for a specific timestep: A number represents the agent group id that is
-     * safe at the vertex. A number with a + sign represents the added safe zone
-     * for the closest agent group. A * represents a vertex that is not safe for
-     * any agent group. The radius of the field of view is 1. Original safe
-     * zones:
-     * ```
-     * 0 0 * * * 1 1
-     * 0 * * * * 1 1
-     * 0 * * * 1 1 1
-     * ```
-     * Extended safe zones:
-     * ```
-     * 0 0 0+  * 1+ 1 1
-     * 0 0+ *  * 1+ 1 1
-     * 0 0+ * 1+ 1  1 1
-     * ```
+     * @details See _extend_safe_zone function for the rules of extending the
+     * safe zones.
      *
      * @param solution The previous solution to be used as a starting point for
      * the k-privacy post-processing algorithm.
      *
      * @note This function is called before refining the paths of the agents.
      */
-    void initialize_safe_zones_cache(const Solution &solution);
+    void initialize_extended_safe_zones_cache(const Solution &solution);
 
     /**
      * @brief Validates the solution after applying k-privacy post-processing.
@@ -147,6 +137,25 @@ class KPrivacyPostProcess
                                                   const Solution &solution,
                                                   bool solution_found,
                                                   int verbose = 0);
+
+    /**
+     * @brief Extends the safe zone of the given agent group at time t to
+     * include an additional vertex v if it follows the extension rules.
+     *
+     * @details The extension rules are as follows:
+     * - v is a neighbor of a vertex in the current safe zone at time t.
+     * - v is not in the safe zone of any agent group at time t.
+     * - v is not in the field of view of any vertex in the safe zone of another
+     * agent group at time t.
+     * - v is not in the safe zone of any other agent group at time t - 1.
+     * - between the possible vertices that can be added, we add a random one.
+     *
+     * @param agent_group_id The agent group id.
+     * @param t The time step.
+     * @return true If a vertex was added to the safe zone.
+     * @return false Otherwise.
+     */
+    bool _extend_safe_zone(int agent_group_id, int t);
 
     /**
      * @brief Prints the safe zone of the i'th agent group into the ostream
@@ -187,10 +196,12 @@ class KPrivacyPostProcess
  * @param seed The seed for the random number generator, used for
  * reproducibility.
  * @param _kpp Pointer to the returned value of the used KPrivacyPostProcess.
- * @return Solution The refined solution after applying k-privacy
- * post-processing.
+ * @return tuple<Solution, Solution> The refined solutions after applying
+ * k-privacy post-processing. The first solution is refined using the initial
+ * safe zones, while the second solution is refined using the extended safe
+ * zones.
  */
-Solution solve_with_k_privacy_post_process(
+std::tuple<Solution, Solution> solve_with_k_privacy_post_process(
     const Instance &ins, bool *solution_found,
     const Solution &previous_solution, const int verbose = 0,
     const Deadline *deadline = nullptr, int seed = 0,

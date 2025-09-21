@@ -67,6 +67,9 @@ int main(int argc, char *argv[])
     program.add_argument("-O", "--output-temporal-graph")
         .help("output temporal graph file")
         .default_value(std::string("./build/temporal_graph.map"));
+    program.add_argument("-E", "--extended-safe-zones-output-name")
+        .help("extended safe zones output file")
+        .default_value(std::string("./build/result_extended_safe_zones.txt"));
 
     // solver parameters
     program.add_argument("--no-all")
@@ -181,6 +184,8 @@ int main(int argc, char *argv[])
     }
     const auto output_temporal_graph =
         program.get<std::string>("output-temporal-graph");
+    const auto extended_safe_zones_output_filename =
+        program.get<std::string>("extended-safe-zones-output-name");
 
     // solver parameters
     const auto flg_no_all = program.get<bool>("no-all");
@@ -214,19 +219,19 @@ int main(int argc, char *argv[])
         std::stof(program.get<std::string>("checkpoints-duration")) * 1000;
 
     // solve
-    KPrivacyPostProcess *kpp = nullptr;
-    const auto deadline = Deadline(time_limit_sec * 1000);
-    bool solution_found = false;
-    const auto solution = solve_with_planner(
-        ins, planner_type, &solution_found, verbose - 1, &deadline, seed,
-        max_iter_count, &previous_solution, &kpp);
-    const auto comp_time_ms = deadline.elapsed_ms();
-
-    // failure
-    if (!solution_found) info(1, verbose, &deadline, "failed to solve");
-
-    // check feasibility
     if (planner_type == PlannerType::KPrivacyPostProcess) {
+        KPrivacyPostProcess *kpp = nullptr;
+        const auto deadline = Deadline(time_limit_sec * 1000);
+        bool solution_found = false;
+        std::tuple<Solution, Solution> post_process_solutions =
+            solve_with_k_privacy_post_process(ins, &solution_found,
+                                              previous_solution, verbose,
+                                              &deadline, seed, &kpp);
+        const auto comp_time_ms = deadline.elapsed_ms();
+        // failure
+        if (!solution_found) info(1, verbose, &deadline, "failed to solve");
+
+        // check feasibility
         bool result = true;
         if (kpp == nullptr) {
             std::cerr
@@ -240,9 +245,19 @@ int main(int argc, char *argv[])
             kpp->print_safe_zones(temporal_graph_file);
         }
         if (!kpp->validate_k_privacy_post_process_solution(
-                ins, solution, solution_found, verbose)) {
+                ins, std::get<0>(post_process_solutions), solution_found,
+                verbose)) {
             info(0, verbose, &deadline,
-                 "invalid solution after k-privacy post-processing");
+                 "invalid IS safe zone solution after k-privacy "
+                 "post-processing");
+            result = false;
+        }
+        if (!kpp->validate_k_privacy_post_process_solution(
+                ins, std::get<1>(post_process_solutions), solution_found,
+                verbose)) {
+            info(0, verbose, &deadline,
+                 "invalid ES safe zone solution after k-privacy "
+                 "post-processing");
             result = false;
         }
         delete kpp;     // Clean up the KPrivacyPostProcess object
@@ -250,16 +265,35 @@ int main(int argc, char *argv[])
         if (!result) {
             return 1;  // Exit with error if the solution is not valid
         }
+        // post processing
+        // write log for IS solution:
+        make_log(ins, std::get<0>(post_process_solutions), solution_found,
+                 output_name, comp_time_ms, map_name, seed, log_short);
+        // write log for ES solution:
+        make_log(ins, std::get<1>(post_process_solutions), solution_found,
+                 extended_safe_zones_output_filename, comp_time_ms, map_name,
+                 seed, log_short);
     } else {
+        const auto deadline = Deadline(time_limit_sec * 1000);
+        bool solution_found = false;
+        const auto solution =
+            solve_with_planner(ins, planner_type, &solution_found, verbose - 1,
+                               &deadline, seed, max_iter_count);
+        const auto comp_time_ms = deadline.elapsed_ms();
+        // failure
+        if (!solution_found) info(1, verbose, &deadline, "failed to solve");
+
+        // check feasibility
         if (!is_feasible_solution(ins, solution, solution_found, verbose)) {
             info(0, verbose, &deadline, "invalid solution");
             return 1;
         }
+
+        // post processing
+        print_stats(verbose, &deadline, ins, solution, comp_time_ms);
+        make_log(ins, solution, solution_found, output_name, comp_time_ms,
+                 map_name, seed, log_short);
     }
 
-    // post processing
-    print_stats(verbose, &deadline, ins, solution, comp_time_ms);
-    make_log(ins, solution, solution_found, output_name, comp_time_ms, map_name,
-             seed, log_short);
     return 0;
 }

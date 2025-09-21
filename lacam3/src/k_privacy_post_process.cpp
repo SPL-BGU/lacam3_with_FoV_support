@@ -10,32 +10,32 @@ KPrivacyPostProcess::KPrivacyPostProcess(const Instance *instance,
       D(_D),
       verbose(verbosity),
       MT(seed),
-      safe_zones_cache(),
+      initial_safe_zones_cache(),
       deadline(_deadline),
-      enhanced_safe_zones_list()
+      extended_safe_zones_list()
 {
 }
 
 KPrivacyPostProcess::~KPrivacyPostProcess()
 {
-    for (auto &pair : safe_zones_cache) {
+    for (auto &pair : initial_safe_zones_cache) {
         delete pair.second;  // Clean up allocated safe zones graphs
     }
 }
 
-TemporalGraph *KPrivacyPostProcess::_get_safe_zones(int agent_group_id)
+TemporalGraph *KPrivacyPostProcess::_get_initial_safe_zones(int agent_group_id)
 {
-    auto it = safe_zones_cache.find(agent_group_id);
-    if (it != safe_zones_cache.end()) {
+    auto it = initial_safe_zones_cache.find(agent_group_id);
+    if (it != initial_safe_zones_cache.end()) {
         return it->second;  // Return cached safe zones if available
     }
     return nullptr;  // Return nullptr if not cached
 }
 
-TemporalGraph *KPrivacyPostProcess::get_safe_zones(const Solution &solution,
-                                                   int agent_group_id)
+TemporalGraph *KPrivacyPostProcess::get_initial_safe_zones(
+    const Solution &solution, int agent_group_id)
 {
-    TemporalGraph *safe_zones = _get_safe_zones(agent_group_id);
+    TemporalGraph *safe_zones = _get_initial_safe_zones(agent_group_id);
     if (safe_zones != nullptr) {
         return safe_zones;  // Return cached safe zones if available
     }
@@ -98,14 +98,111 @@ TemporalGraph *KPrivacyPostProcess::get_safe_zones(const Solution &solution,
         }
     }
 
-    safe_zones_cache[agent_group_id] = safe_zones;
+    initial_safe_zones_cache[agent_group_id] = safe_zones;
     return safe_zones;
 l_cleanup:
     delete safe_zones;  // Clean up if we exit early
     return nullptr;     // Return nullptr if we exit early
 }
 
-void KPrivacyPostProcess::initialize_safe_zones_cache(const Solution &solution)
+bool KPrivacyPostProcess::_extend_safe_zone(int agent_group_id, int t)
+{
+    TemporalGraph *current_safe_zone = extended_safe_zones_list[agent_group_id];
+    if (current_safe_zone == nullptr) {
+        throw std::runtime_error("Safe zones for agent group " +
+                                 std::to_string(agent_group_id) +
+                                 " are not cached.");
+    }
+    // Collect all candidate vertices that can be added to the safe zone at time
+    // t
+    Vertices candidate_vertices;
+    for (TemporalVertex *tv : current_safe_zone->V) {
+        bool valid = true;
+        // Check if the vertex is a neighbor of any vertex in the safe zone at
+        // time t (Rule 1).
+        valid = false;
+        for (Vertex *neighbor : tv->vertex->neighbor) {
+            if (current_safe_zone->V[neighbor->id]->timestamps.count(t) > 0) {
+                valid = true;
+                break;  // If any neighbor is in the safe zone at time t, add tv
+                        // as a candidate
+            }
+        }
+        if (!valid) {
+            continue;
+        }
+        // Check that tv is not in any safe zone at time t, and not in any other
+        // safe zone at time t-1 (Rules 2 and 4).
+        for (int other_agent_group_id = 0;
+             other_agent_group_id < get_num_of_agent_groups(ins->N, ins->k);
+             ++other_agent_group_id) {
+            TemporalGraph *other_safe_zone =
+                extended_safe_zones_list[other_agent_group_id];
+            if (other_safe_zone == nullptr) {
+                throw std::runtime_error("Safe zones for agent group " +
+                                         std::to_string(other_agent_group_id) +
+                                         " are not cached.");
+            }
+            if (other_safe_zone->V[tv->vertex->id]->timestamps.count(t) > 0) {
+                valid =
+                    false;  // If tv is in another safe zone at time t, skip it
+                break;
+            }
+            if (other_agent_group_id == agent_group_id) {
+                continue;  // Only need to validate that the current safe zone
+                           // does not contain tv at time t
+            }
+            if (t > 0 && other_safe_zone->V[tv->vertex->id]->timestamps.count(
+                             t - 1) > 0) {
+                valid = false;  // If tv is in another safe zone at time t-1,
+                                // skip it
+                break;
+            }
+        }
+        if (!valid) {
+            continue;
+        }
+        // Check that tv is not in the field of view of any vertex in another
+        // safe zone at time t (Rule 3).
+        for (int other_agent_group_id = 0;
+             other_agent_group_id < get_num_of_agent_groups(ins->N, ins->k);
+             ++other_agent_group_id) {
+            if (other_agent_group_id == agent_group_id) {
+                continue;  // Skip checking against its own safe zone
+            }
+            TemporalGraph *other_safe_zone =
+                extended_safe_zones_list[other_agent_group_id];
+            if (other_safe_zone == nullptr) {
+                throw std::runtime_error("Safe zones for agent group " +
+                                         std::to_string(other_agent_group_id) +
+                                         " are not cached.");
+            }
+            if (other_safe_zone->is_in_field_of_view_of_safe_zone(tv->vertex,
+                                                                  t)) {
+                valid = false;  // If tv is in the field of view of another safe
+                                // zone at time t, skip it
+                break;
+            }
+        }
+        if (valid) {
+            candidate_vertices.push_back(
+                tv->vertex);  // Add tv as a candidate vertex
+        }
+    }
+    if (candidate_vertices.empty()) {
+        return false;  // No candidates to add
+    }
+    // Randomly select one candidate vertex to add to the safe zone at time t
+    std::uniform_int_distribution<size_t> dist(0,
+                                               candidate_vertices.size() - 1);
+    size_t selected_index = dist(MT);
+    Vertex *selected_vertex = candidate_vertices[selected_index];
+    current_safe_zone->add_timestep_to_vertex(selected_vertex, t);
+    return true;  // Successfully added a vertex to the safe zone
+}
+
+void KPrivacyPostProcess::initialize_extended_safe_zones_cache(
+    const Solution &solution)
 {
     std::vector<TemporalGraph *> safe_zones_list;
     // Initialize safe zones cache for all agent groups
@@ -115,107 +212,35 @@ void KPrivacyPostProcess::initialize_safe_zones_cache(const Solution &solution)
         if (is_expired(deadline)) {
             return;  // Stop if the deadline is reached
         }
-        TemporalGraph *safe_zones = get_safe_zones(solution, agent_group_id);
+        TemporalGraph *safe_zones =
+            get_initial_safe_zones(solution, agent_group_id);
         safe_zones_list.push_back(safe_zones);  // Populate cache
-        enhanced_safe_zones_list.push_back(
+        extended_safe_zones_list.push_back(
             new TemporalGraph(*safe_zones));  // Create a copy for enhancement
     }
-    // Now extend the safe zones to closest locations which are not safe for any
-    // agent group.
-    // Goes over all safe zones and each vertex that is not safe for any
-    // agent group is defined safe for the closest agent group.
-    // If the vertex's distance from the closet two agent groups (d1 and d2) is
-    // `|d1 - d2| <= sqrt(2 * field_of_view_radius)` (For enabling distance also
-    // in diagonal moves), or it is in the field of view of two agent groups -
-    // it is not safe for any agent group, for being fair to all agent groups.
+    // Now extend the safe zones by adding random vertices that are not in any
+    // safe zone currently.
     for (int t = 0; t < solution.size(); ++t) {
-        for (int id = 0; id < ins->G->V.size(); ++id) {
-            if (is_expired(deadline)) {
-                return;  // Stop if the deadline is reached
-            }
-            Vertex *v = ins->G->V[id];
-            int num_of_agent_groups_in_field_of_view = 0;
-
-            for (int i = 0; i < enhanced_safe_zones_list.size(); ++i) {
+        bool done;
+        do {
+            done = true;
+            for (int agent_group_id = 0;
+                 agent_group_id < get_num_of_agent_groups(ins->N, ins->k);
+                 ++agent_group_id) {
                 if (is_expired(deadline)) {
                     return;  // Stop if the deadline is reached
                 }
-                if (num_of_agent_groups_in_field_of_view >= 2) {
-                    break;  // No need to check further if already in field of
-                            // view
-                }
-                TemporalGraph *safe_zones = enhanced_safe_zones_list[i];
-                if (safe_zones->is_in_field_of_view_of_safe_zone(v, t)) {
-                    num_of_agent_groups_in_field_of_view++;
-                }
+                bool picked = _extend_safe_zone(agent_group_id, t);
+                done = done && !picked;
             }
-            if (num_of_agent_groups_in_field_of_view >= 2) {
-                continue;  // If the vertex is in the field of view of two agent
-                           // groups, it is not safe for any agent group
-            }
-
-            double min_distance = std::numeric_limits<double>::max();
-            int closest_agent_group_id = -1;
-            double second_min_distance = std::numeric_limits<double>::max();
-            int second_closest_agent_group_id = -1;
-            bool safe_for_any_agent_group = false;
-
-            for (int i = 0; i < safe_zones_list.size(); ++i) {
-                double distance =
-                    safe_zones_list[i]->distance_from_safe_zone(v, t);
-                if (0 == distance) {
-                    // If the vertex is safe for this agent group, skip it
-                    safe_for_any_agent_group = true;
-                    break;
-                }
-                if (distance < min_distance) {
-                    second_min_distance = min_distance;
-                    second_closest_agent_group_id = closest_agent_group_id;
-                    min_distance = distance;
-                    closest_agent_group_id = i;
-                } else if (distance < second_min_distance) {
-                    second_min_distance = distance;
-                    second_closest_agent_group_id = i;
-                }
-            }
-            if (safe_for_any_agent_group) {
-                continue;  // If the vertex is safe for any agent group, skip it
-            }
-            // If the vertex is not safe for any agent group, check the distance
-            // from the closest two agent groups.
-            if (closest_agent_group_id != -1) {
-                if (second_closest_agent_group_id != -1) {
-                    double distance_diff =
-                        std::abs(min_distance - second_min_distance);
-                    if (std::sqrt(2 * ins->field_of_view_radius) >=
-                        distance_diff) {
-                        // If the distance difference is within the threshold,
-                        // it is not safe for any agent group.
-                        continue;
-                    }
-                }
-                // If we reached here, the vertex is safe for the closest agent
-                // group - add it to the enhanced safe zone, so it will not be
-                // calculated for other vertices in this timestamp.
-                enhanced_safe_zones_list[closest_agent_group_id]
-                    ->add_timestep_to_vertex(v, t);
-            }
-        }
+        } while (!done);
     }
 }
 
-Path KPrivacyPostProcess::refine_real_agent_path(const Solution &solution,
+Path KPrivacyPostProcess::refine_real_agent_path(TemporalGraph *safe_zones,
                                                  int agent_group_id,
                                                  int real_agent_id)
 {
-    // Get the safe zones for the agent's group
-    // TemporalGraph *safe_zones = get_safe_zones(solution, agent_group_id);
-    TemporalGraph *safe_zones =
-        enhanced_safe_zones_list[agent_group_id];  // Use enhanced safe zones
-    if (is_expired(deadline)) {
-        return Path();  // Return empty path if deadline is reached
-    }
-
     // Convert to safe intervals
     SITable safe_intervals = safe_zones->to_safe_interval_table();
 
@@ -233,12 +258,20 @@ Path KPrivacyPostProcess::refine_real_agent_path(const Solution &solution,
     return refined_path;  // Return the refined path for the real agent
 }
 
-Solution solve_with_k_privacy_post_process(const Instance &ins,
-                                           bool *solution_found,
-                                           const Solution &previous_solution,
-                                           const int verbose,
-                                           const Deadline *deadline, int seed,
-                                           KPrivacyPostProcess **_kpp)
+TemporalGraph *KPrivacyPostProcess::get_extended_safe_zones(int agent_group_id)
+{
+    if (extended_safe_zones_list.empty()) {
+        throw std::runtime_error(
+            "Extended safe zones cache is not initialized. Please call "
+            "initialize_extended_safe_zones_cache first.");
+    }
+    return extended_safe_zones_list[agent_group_id];
+}
+
+std::tuple<Solution, Solution> solve_with_k_privacy_post_process(
+    const Instance &ins, bool *solution_found,
+    const Solution &previous_solution, const int verbose,
+    const Deadline *deadline, int seed, KPrivacyPostProcess **_kpp)
 {
     DistTable D(&ins);
     KPrivacyPostProcess *kpp =
@@ -250,15 +283,13 @@ Solution solve_with_k_privacy_post_process(const Instance &ins,
             "KPrivacyPostProcess pointer is null, cannot proceed with "
             "post-processing.");
     }
-    Paths refined_paths;
-
-    std::cout << "Previous solution's cost = "
-              << get_sum_of_costs(previous_solution) << std::endl;
+    Paths IS_refined_paths;
+    Paths ES_refined_paths;
 
     *solution_found = true;  // Indicate that a solution was found
 
     // Initialize all safe zones cache for all agent groups.
-    kpp->initialize_safe_zones_cache(previous_solution);
+    kpp->initialize_extended_safe_zones_cache(previous_solution);
     // Iterate over each agent group
     for (int agent_group_id = 0;
          agent_group_id < get_num_of_agent_groups(ins.N, ins.k);
@@ -272,20 +303,39 @@ Solution solve_with_k_privacy_post_process(const Instance &ins,
                 *solution_found = false;
                 break;  // Stop if the deadline is reached
             }
-            Path refined_path = kpp->refine_real_agent_path(
-                previous_solution, agent_group_id, real_agent_id);
+
+            // Refine path with the initial safe zones
+            TemporalGraph *initial_safe_zones =
+                kpp->get_initial_safe_zones(previous_solution, agent_group_id);
+            if (initial_safe_zones == nullptr) {
+                *solution_found = false;
+                break;  // Stop if we cannot get the initial safe zones
+            }
+            Path initial_refined_path = kpp->refine_real_agent_path(
+                initial_safe_zones, agent_group_id, real_agent_id);
             // Update the solution with the refined path
-            refined_paths.push_back(std::move(refined_path));
+            IS_refined_paths.push_back(std::move(initial_refined_path));
+
+            // Refine path with the extended safe zones
+            TemporalGraph *extended_safe_zones =
+                kpp->get_extended_safe_zones(agent_group_id);
+            if (extended_safe_zones == nullptr) {
+                *solution_found = false;
+                break;  // Stop if we cannot get the initial safe zones
+            }
+            Path extended_refined_path = kpp->refine_real_agent_path(
+                extended_safe_zones, agent_group_id, real_agent_id);
+            // Update the solution with the refined path
+            ES_refined_paths.push_back(std::move(extended_refined_path));
         }
     }
 
     if (*solution_found) {
-        std::cout << "Refined solution's cost = "
-                  << get_sum_of_costs_paths(refined_paths) << std::endl;
-        return from_paths(refined_paths);
+        return std::tuple<Solution, Solution>(from_paths(IS_refined_paths),
+                                              from_paths(ES_refined_paths));
     } else {
         // Return an empty solution if not found.
-        return Solution();
+        return std::tuple<Solution, Solution>(Solution(), Solution());
     }
 }
 
@@ -311,7 +361,7 @@ bool KPrivacyPostProcess::validate_k_privacy_post_process_solution(
         // Check if the agent is in its safe zone at this time step
         for (size_t i = 0; i < config.size(); ++i) {
             TemporalGraph *safe_zones =
-                enhanced_safe_zones_list[get_agent_group_id(i, ins.k)];
+                extended_safe_zones_list[get_agent_group_id(i, ins.k)];
             if (safe_zones == nullptr) {
                 throw std::runtime_error(
                     "Safe zones for agent group " +
@@ -364,7 +414,7 @@ bool KPrivacyPostProcess::validate_k_privacy_post_process_solution(
 
 void KPrivacyPostProcess::print_safe_zone(std::ostream &os, int i)
 {
-    os << enhanced_safe_zones_list[i];
+    os << extended_safe_zones_list[i];
 }
 
 void KPrivacyPostProcess::print_safe_zones(std::ostream &os)
