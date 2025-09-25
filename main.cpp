@@ -245,7 +245,7 @@ int main(int argc, char *argv[])
             kpp->print_safe_zones(temporal_graph_file);
         }
         if (!kpp->validate_k_privacy_post_process_solution(
-                ins, std::get<0>(post_process_solutions), solution_found,
+                ins, std::get<0>(post_process_solutions), solution_found, true,
                 verbose)) {
             info(0, verbose, &deadline,
                  "invalid IS safe zone solution after k-privacy "
@@ -253,7 +253,7 @@ int main(int argc, char *argv[])
             result = false;
         }
         if (!kpp->validate_k_privacy_post_process_solution(
-                ins, std::get<1>(post_process_solutions), solution_found,
+                ins, std::get<1>(post_process_solutions), solution_found, false,
                 verbose)) {
             info(0, verbose, &deadline,
                  "invalid ES safe zone solution after k-privacy "

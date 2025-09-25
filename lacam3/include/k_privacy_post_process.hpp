@@ -124,6 +124,8 @@ class KPrivacyPostProcess
      * @param solution The solution to be validated.
      * @param solution_found True if a solution is found for all agents, false
      * otherwise.
+     * @param based_on_initial_safe_zones True if the solution is based on the
+     * initial safe zones, false if based on the extended safe zones.
      * @param verbose Whether to print verbose output (0 for no output, higher
      * values for more output).
      * @return true If the solution is valid, meaning all agents are in their
@@ -133,10 +135,9 @@ class KPrivacyPostProcess
      * not in its safe zone at some time step or the solution is not feasible
      * for at least one agent.
      */
-    bool validate_k_privacy_post_process_solution(const Instance &ins,
-                                                  const Solution &solution,
-                                                  bool solution_found,
-                                                  int verbose = 0);
+    bool validate_k_privacy_post_process_solution(
+        const Instance &ins, const Solution &solution, bool solution_found,
+        bool based_on_initial_safe_zones, int verbose = 0);
 
     /**
      * @brief Extends the safe zone of the given agent group at time t to

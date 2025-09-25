@@ -341,7 +341,7 @@ std::tuple<Solution, Solution> solve_with_k_privacy_post_process(
 
 bool KPrivacyPostProcess::validate_k_privacy_post_process_solution(
     const Instance &ins, const Solution &solution, bool solution_found,
-    const int verbose)
+    bool based_on_initial_safe_zones, const int verbose)
 {
     if (!solution_found) {
         return true;  // If no solution is found, we consider it valid
@@ -360,8 +360,14 @@ bool KPrivacyPostProcess::validate_k_privacy_post_process_solution(
         }
         // Check if the agent is in its safe zone at this time step
         for (size_t i = 0; i < config.size(); ++i) {
-            TemporalGraph *safe_zones =
-                extended_safe_zones_list[get_agent_group_id(i, ins.k)];
+            TemporalGraph *safe_zones = nullptr;
+            if (based_on_initial_safe_zones) {
+                safe_zones =
+                    initial_safe_zones_cache[get_agent_group_id(i, ins.k)];
+            } else {
+                safe_zones =
+                    extended_safe_zones_list[get_agent_group_id(i, ins.k)];
+            }
             if (safe_zones == nullptr) {
                 throw std::runtime_error(
                     "Safe zones for agent group " +
@@ -376,6 +382,37 @@ bool KPrivacyPostProcess::validate_k_privacy_post_process_solution(
                          std::to_string(t) + ".");
                 return false;  // Agent is not in its safe zone at this time
                                // step
+            }
+
+            // Check for conflicts with other agent groups
+            for (size_t j = i + 1; j < config.size(); ++j) {
+                size_t agent_group_id_i = get_agent_group_id(i, ins.k);
+                size_t agent_group_id_j = get_agent_group_id(j, ins.k);
+                if (agent_group_id_i != agent_group_id_j) {
+                    // Only if the agent groups are different,
+                    // the conflicts should be checked - since agents in the
+                    // same group can conflict with each other after the
+                    // post-processing algorithm.
+                    // Check vertex conflicts
+                    if (config[i] == config[j]) {
+                        info(0, verbose,
+                             "Vertex conflict between agent " +
+                                 std::to_string(i) + " and agent " +
+                                 std::to_string(j) + " at time step " +
+                                 std::to_string(t) + ".");
+                        return false;  // Vertex conflict
+                    }
+                    // Check field of view conflicts
+                    if (in_field_of_view(config[i], config[j],
+                                         ins.field_of_view_radius)) {
+                        info(0, verbose,
+                             "Field of view conflict between agent " +
+                                 std::to_string(i) + " and agent " +
+                                 std::to_string(j) + " at time step " +
+                                 std::to_string(t) + ".");
+                        return false;  // Field of view conflict
+                    }
+                }
             }
         }
         if (previous_config != nullptr) {
@@ -402,6 +439,27 @@ bool KPrivacyPostProcess::validate_k_privacy_post_process_solution(
                                  "step " +
                                  std::to_string(t) + ".");
                         return false;  // Agent is not moving to a neighbor
+                    }
+                }
+                // Check for conflicts with other agent groups
+                for (size_t j = i + 1; j < config.size(); ++j) {
+                    size_t agent_group_id_i = get_agent_group_id(i, ins.k);
+                    size_t agent_group_id_j = get_agent_group_id(j, ins.k);
+                    if (agent_group_id_i != agent_group_id_j) {
+                        // Only if the agent groups are different,
+                        // the conflicts should be checked - since agents in the
+                        // same group can conflict with each other after the
+                        // post-processing algorithm.
+                        // Check swapping conflicts
+                        if (config[i] == previous_config->at(j) &&
+                            config[j] == previous_config->at(i)) {
+                            info(0, verbose,
+                                 "Swapping conflict between agent " +
+                                     std::to_string(i) + " and agent " +
+                                     std::to_string(j) + " at time step " +
+                                     std::to_string(t) + ".");
+                            return false;  // Swapping conflict
+                        }
                     }
                 }
             }
