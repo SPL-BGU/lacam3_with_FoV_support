@@ -10,8 +10,7 @@ add_subdirectory(./third_party/argparse)
 
 add_executable(main main.cpp)
 target_compile_features(main PUBLIC cxx_std_17)
-# target_link_libraries(main lacam3 argparse -static)
-target_link_libraries(main lacam3 argparse)
+target_link_libraries(main lacam3 argparse -static)
 
 # test
 enable_testing()
