@@ -409,12 +409,6 @@ bool KPrivacyPostProcess::validate_k_privacy_post_process_solution(
             }
         }
         if (previous_config != nullptr) {
-            // Check if the current configuration is different from the
-            // previous one
-            if (*previous_config == config) {
-                info(0, verbose, "Consecutive configurations are the same.");
-                return false;
-            }
             for (size_t i = 0; i < config.size(); ++i) {
                 // Check connectivity between the current and previous
                 // configurations
