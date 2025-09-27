@@ -148,8 +148,6 @@ class KPrivacyPostProcess
      * - v is not in the safe zone of any agent group at time t.
      * - v is not in the field of view of any vertex in the safe zone of another
      * agent group at time t.
-     * - v is not in the safe zone of any other agent group at time t - 1 and
-     * v is not in the initial safe zone of any other agent group at time t + 1.
      * - between the possible vertices that can be added, we add a random one.
      *
      * @param agent_group_id The agent group id.

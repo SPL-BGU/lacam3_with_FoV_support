@@ -131,9 +131,7 @@ bool KPrivacyPostProcess::_extend_safe_zone(int agent_group_id, int t)
         if (!valid) {
             continue;
         }
-        // Check that tv is not in any safe zone at time t, and not in any other
-        // safe zone at time t-1 or any initial safe zone at time t+1 (Rules 2
-        // and 4).
+        // Check that tv is not in any safe zone at time t (Rule 2).
         for (int other_agent_group_id = 0;
              other_agent_group_id < get_num_of_agent_groups(ins->N, ins->k);
              ++other_agent_group_id) {
@@ -141,13 +139,6 @@ bool KPrivacyPostProcess::_extend_safe_zone(int agent_group_id, int t)
                 extended_safe_zones_list[other_agent_group_id];
             if (other_safe_zone == nullptr) {
                 throw std::runtime_error("Safe zones for agent group " +
-                                         std::to_string(other_agent_group_id) +
-                                         " are not cached.");
-            }
-            TemporalGraph *other_initial_safe_zone =
-                initial_safe_zones_cache[other_agent_group_id];
-            if (other_initial_safe_zone == nullptr) {
-                throw std::runtime_error("Initial safe zones for agent group " +
                                          std::to_string(other_agent_group_id) +
                                          " are not cached.");
             }
@@ -159,19 +150,6 @@ bool KPrivacyPostProcess::_extend_safe_zone(int agent_group_id, int t)
             if (other_agent_group_id == agent_group_id) {
                 continue;  // Only need to validate that the current safe zone
                            // does not contain tv at time t
-            }
-            if (t > 0 && other_safe_zone->V[tv->vertex->id]->timestamps.count(
-                             t - 1) > 0) {
-                valid = false;  // If tv is in another safe zone at time t-1,
-                                // skip it
-                break;
-            }
-            if (t < other_initial_safe_zone->max_timestamp &&
-                other_initial_safe_zone->V[tv->vertex->id]->timestamps.count(
-                    t + 1) > 0) {
-                valid = false;  // If tv is in another initial safe zone at time
-                                // t+1, skip it
-                break;
             }
         }
         if (!valid) {
