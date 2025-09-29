@@ -32,6 +32,8 @@ struct TemporalGraph {
     Graph *G;                // Original graph
     int max_timestamp = -1;  // Maximum timestamp in the graph
     const Instance *ins;
+    // For quick lookup of vertices available at a specific timestamp
+    std::unordered_map<int, Vertices> timestemp_to_vertices_map;
 
     TemporalGraph(const Instance *_ins);
     TemporalGraph(const TemporalGraph &other);

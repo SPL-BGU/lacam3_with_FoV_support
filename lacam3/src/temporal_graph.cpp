@@ -20,6 +20,7 @@ void TemporalGraph::add_timestep_to_vertex(Vertex *v, int timestamp)
             "graph.");
     }
     V[v->id]->timestamps.insert(timestamp);
+    timestemp_to_vertices_map[timestamp].push_back(v);
 
     if (timestamp > max_timestamp) {
         max_timestamp = timestamp;
@@ -118,13 +119,16 @@ bool TemporalGraph::is_in_field_of_view_of_safe_zone(const Vertex *v,
 
     // Check if the vertex is in the field of view of any safe zone at the given
     // timestamp
-    for (const auto &tv : V) {
-        if (tv->timestamps.count(timestamp) > 0) {
-            if (in_field_of_view(tv->vertex, v, ins->field_of_view_radius)) {
-                return true;  // If the vertex is in the field of view of any
-                              // vertex in the safe zone at the given timestamp,
-                              // return true
-            }
+    auto it = timestemp_to_vertices_map.find(timestamp);
+    if (it == timestemp_to_vertices_map.end()) {
+        return false;  // No vertices are safe at this timestamp
+    }
+    Vertices safe_vertices_at_timestamp = it->second;
+    for (const auto &vertex : safe_vertices_at_timestamp) {
+        if (in_field_of_view(vertex, v, ins->field_of_view_radius)) {
+            return true;  // If the vertex is in the field of view of any
+                          // vertex in the safe zone at the given timestamp,
+                          // return true
         }
     }
     return false;
