@@ -18,6 +18,7 @@
 #include <random>
 #include <regex>
 #include <set>
+#include <source_location>
 #include <stack>
 #include <string>
 #include <unordered_map>
@@ -37,7 +38,8 @@ struct Deadline {
 
 double elapsed_ms(const Deadline *deadline);
 double elapsed_ns(const Deadline *deadline);
-bool is_expired(const Deadline *deadline);
+bool is_expired(const Deadline *deadline, const std::source_location location =
+                                              std::source_location::current());
 
 float get_random_float(std::mt19937 &MT, float from = 0, float to = 1);
 float get_random_float(std::mt19937 *MT, float from = 0, float to = 1);

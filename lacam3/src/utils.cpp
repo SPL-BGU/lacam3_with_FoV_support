@@ -33,10 +33,16 @@ double elapsed_ns(const Deadline *deadline)
     return deadline->elapsed_ns();
 }
 
-bool is_expired(const Deadline *deadline)
+bool is_expired(const Deadline *deadline, const std::source_location location)
 {
     if (deadline == nullptr) return false;
-    return deadline->elapsed_ms() > deadline->time_limit_ms;
+    bool expired = deadline->elapsed_ms() > deadline->time_limit_ms;
+    if (expired) {
+        std::cout << "Deadline expired at " << location.file_name() << ":"
+                  << location.line() << " in function "
+                  << location.function_name() << std::endl;
+    }
+    return expired;
 }
 
 float get_random_float(std::mt19937 &MT, float from, float to)

@@ -56,6 +56,91 @@ class KPrivacyPostProcess
      */
     TemporalGraph *_get_initial_safe_zones(int agent_group_id);
 
+    /**
+     * @brief A vector that holds possible vertices to extend the safe zone
+     * for each agent group.
+     * @note This is updated at each time step and cleared after the time step.
+     * It is used to hold the possible vertices that can be added to the safe
+     * zone of each agent group at the current time step.
+     */
+    std::vector<std::unordered_set<Vertex *>>
+        current_agent_group_possible_extend_vertices;
+
+    /**
+     * @brief A map that holds for each vertex, the set of agent groups
+     * that can extend it (i.e., the vertex is in their possible extend vertices
+     * set).
+     *
+     * @note This is used to quickly check if a vertex is in the possible extend
+     * set of any agent group when extending safe zones at each time step.
+     */
+    std::unordered_map<Vertex *, std::unordered_set<int>>
+        vertex_in_agent_groups_map;
+
+    /**
+     * @brief Adds a vertex to the extended_safe_zones for the given agent
+     * group.
+     *
+     * @note Handles updating the current_agent_group_possible_extend_vertices
+     * and vertex_in_agent_groups_map accordingly for all agents affected.
+     *
+     * @param v The vertex to add.
+     * @param agent_group_id The agent group id to add the vertex to.
+     * @param t The time step to add the vertex at.
+     */
+    void _add_vertex_to_ES(Vertex *v, int agent_group_id, int t);
+
+    /**
+     * @brief Chooses a random vertex from the possible extend vertices of the
+     * given agent group and adds it to the extended safe zones at time t, if
+     * any such vertex exists.
+     *
+     * @note Handles updating the current_agent_group_possible_extend_vertices
+     * and vertex_in_agent_groups_map accordingly for all agents affected.
+     *
+     * @param agent_group_id The agent group id.
+     * @param t The time step.
+     * @return true If a vertex was added to the extended safe zones.
+     * @return false Otherwise.
+     */
+    bool _choose_random_vertex_and_add_to_ES(int agent_group_id, int t);
+
+    /**
+     * @brief Initializes the current_agent_group_possible_extend_vertices and
+     * vertex_in_agent_groups_map for the current time step.
+     *
+     * @param t The current time step.
+     */
+    void _initialize_current_agent_group_possible_extend_vertices(int t);
+
+    /**
+     * @brief Initializes the set of possible extend vertices of the given agent
+     * group at time t, following the extension rules.
+     *
+     * @details The extension rules are as follows:
+     * - v is a neighbor of a vertex in the current safe zone at time t.
+     * - v is not in the safe zone of any agent group at time t.
+     * - v is not in the field of view of any vertex in the safe zone of another
+     * agent group at time t.
+     * - between the possible vertices that can be added, we add a random one.
+     *
+     * @param agent_group_id The agent group id.
+     * @param t The time step.
+     */
+    void _initialize_agent_group_possible_vertices(int agent_group_id, int t);
+
+    /**
+     * @brief Checks if a vertex can be added to the possible extend vertices of
+     * the given agent group at time t, and adds it if valid according to the
+     * extension rules.
+     *
+     * @param v The vertex to check and potentially add.
+     * @param agent_group_id The agent group id.
+     * @param t The time step.
+     */
+    void _check_and_add_vertex_to_possible_extend(Vertex *v, int agent_group_id,
+                                                  int t);
+
   public:
     KPrivacyPostProcess(const Instance *instance, DistTable *_D, int seed = 0,
                         int verbosity = 0, const Deadline *_deadline = nullptr);
@@ -138,24 +223,6 @@ class KPrivacyPostProcess
     bool validate_k_privacy_post_process_solution(
         const Instance &ins, const Solution &solution, bool solution_found,
         bool based_on_initial_safe_zones, int verbose = 0);
-
-    /**
-     * @brief Extends the safe zone of the given agent group at time t to
-     * include an additional vertex v if it follows the extension rules.
-     *
-     * @details The extension rules are as follows:
-     * - v is a neighbor of a vertex in the current safe zone at time t.
-     * - v is not in the safe zone of any agent group at time t.
-     * - v is not in the field of view of any vertex in the safe zone of another
-     * agent group at time t.
-     * - between the possible vertices that can be added, we add a random one.
-     *
-     * @param agent_group_id The agent group id.
-     * @param t The time step.
-     * @return true If a vertex was added to the safe zone.
-     * @return false Otherwise.
-     */
-    bool _extend_safe_zone(int agent_group_id, int t);
 
     /**
      * @brief Prints the safe zone of the i'th agent group into the ostream
