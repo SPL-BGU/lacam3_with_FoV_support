@@ -1,10 +1,15 @@
 #include "../include/k_privacy_post_process.hpp"
 
+#include <chrono>
+
 #include "../include/field_of_view.hpp"
 #include "../include/metrics.hpp"
 
+static int64_t total_extension_time_microseconds;
+
 KPrivacyPostProcess::KPrivacyPostProcess(const Instance *instance,
-                                         DistTable *_D, int seed, int verbosity,
+                                         DistTable *_D, int max_timestamp,
+                                         int seed, int verbosity,
                                          const Deadline *_deadline)
     : ins(instance),
       D(_D),
@@ -12,7 +17,12 @@ KPrivacyPostProcess::KPrivacyPostProcess(const Instance *instance,
       MT(seed),
       initial_safe_zones_cache(),
       deadline(_deadline),
-      extended_safe_zones_list()
+      extended_safe_zones_list(),
+      timestamp__agent_group__possible_extend_vertices(
+          max_timestamp + 1,
+          std::vector<RandomizedSet>(get_num_of_agent_groups(ins->N, ins->k))),
+      timestamp__vertex__agent_groups(
+          max_timestamp + 1, std::vector<std::vector<int>>(ins->G->V.size()))
 {
 }
 
@@ -42,7 +52,7 @@ TemporalGraph *KPrivacyPostProcess::get_initial_safe_zones(
 
     // Create a new TemporalGraph for safe zones if it is not cached.
 
-    safe_zones = new TemporalGraph(ins);
+    safe_zones = new TemporalGraph(ins, solution.size() - 1);
 
     for (size_t t = 0; t < solution.size(); ++t) {
         if (is_expired(deadline)) {
@@ -108,10 +118,6 @@ l_cleanup:
 void KPrivacyPostProcess::
     _initialize_current_agent_group_possible_extend_vertices(int t)
 {
-    current_agent_group_possible_extend_vertices.clear();
-    current_agent_group_possible_extend_vertices.resize(
-        get_num_of_agent_groups(ins->N, ins->k));
-    vertex_in_agent_groups_map.clear();
     for (int agent_group_id = 0;
          agent_group_id < get_num_of_agent_groups(ins->N, ins->k);
          ++agent_group_id) {
@@ -133,7 +139,7 @@ void KPrivacyPostProcess::_check_and_add_vertex_to_possible_extend(
     // time t (Rule 1).
     valid = false;
     for (Vertex *neighbor : v->neighbor) {
-        if (current_safe_zone->V[neighbor->id]->timestamps.count(t) > 0) {
+        if (current_safe_zone->timestamp_to_vertices_map[t][neighbor->id]) {
             valid = true;
             break;  // If any neighbor is in the safe zone at time t, add tv
                     // as a candidate
@@ -153,7 +159,7 @@ void KPrivacyPostProcess::_check_and_add_vertex_to_possible_extend(
                                      std::to_string(other_agent_group_id) +
                                      " are not cached.");
         }
-        if (other_safe_zone->V[v->id]->timestamps.count(t) > 0) {
+        if (other_safe_zone->timestamp_to_vertices_map[t][v->id]) {
             valid = false;  // If v is in another safe zone at time t, skip it
             break;
         }
@@ -161,6 +167,7 @@ void KPrivacyPostProcess::_check_and_add_vertex_to_possible_extend(
     if (!valid) {
         return;
     }
+    auto start = std::chrono::high_resolution_clock::now();
     // Check that v is not in the field of view of any vertex in another
     // safe zone at time t (Rule 3).
     for (int other_agent_group_id = 0;
@@ -182,9 +189,17 @@ void KPrivacyPostProcess::_check_and_add_vertex_to_possible_extend(
             break;
         }
     }
+    auto end = std::chrono::high_resolution_clock::now();
+    total_extension_time_microseconds +=
+        std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+            .count();
     if (valid) {
-        current_agent_group_possible_extend_vertices[agent_group_id].insert(v);
-        vertex_in_agent_groups_map[v].insert(agent_group_id);
+        bool inserted =
+            timestamp__agent_group__possible_extend_vertices[t][agent_group_id]
+                .insert(v->id);
+        if (inserted) {
+            timestamp__vertex__agent_groups[t][v->id].push_back(agent_group_id);
+        }
     }
 }
 
@@ -213,19 +228,17 @@ void KPrivacyPostProcess::_add_vertex_to_ES(Vertex *v, int agent_group_id,
                                  std::to_string(agent_group_id) +
                                  " are not cached.");
     }
-    current_safe_zone->add_timestep_to_vertex(v, t);
+    current_safe_zone->add_timestep_to_vertex(v, t, false);
     // Remove v and it's field of view from the possible extend vertices of all
     // agent groups that have it
     Vertices v_field_of_view =
         get_field_of_view(ins->G, v, ins->field_of_view_radius);
     for (Vertex *fv : v_field_of_view) {
-        auto it = vertex_in_agent_groups_map.find(fv);
-        if (it != vertex_in_agent_groups_map.end()) {
-            for (int ag_id : it->second) {
-                current_agent_group_possible_extend_vertices[ag_id].erase(fv);
-            }
-            vertex_in_agent_groups_map.erase(it);
+        for (int ag_id : timestamp__vertex__agent_groups[t][fv->id]) {
+            timestamp__agent_group__possible_extend_vertices[t][ag_id].remove(
+                fv->id);
         }
+        timestamp__vertex__agent_groups[t][fv->id].clear();
     }
     Vertices v_neighbors = v->neighbor;
     for (Vertex *neighbor : v_neighbors) {
@@ -236,17 +249,14 @@ void KPrivacyPostProcess::_add_vertex_to_ES(Vertex *v, int agent_group_id,
 bool KPrivacyPostProcess::_choose_random_vertex_and_add_to_ES(
     int agent_group_id, int t)
 {
-    auto &possible_vertices =
-        current_agent_group_possible_extend_vertices[agent_group_id];
-    if (possible_vertices.empty()) {
+    int vertex_id = -1;
+    bool had_vertex =
+        timestamp__agent_group__possible_extend_vertices[t][agent_group_id]
+            .getRandom(MT, &vertex_id);
+    if (!had_vertex) {
         return false;  // No candidates to add
     }
-    // Randomly select one candidate vertex to add to the safe zone at time t
-    std::uniform_int_distribution<size_t> dist(0, possible_vertices.size() - 1);
-    size_t selected_index = dist(MT);
-    auto it = possible_vertices.begin();
-    std::advance(it, selected_index);
-    Vertex *selected_vertex = *it;
+    Vertex *selected_vertex = ins->G->V[vertex_id];
     _add_vertex_to_ES(selected_vertex, agent_group_id, t);
     return true;  // Successfully added a vertex to the safe zone
 }
@@ -271,9 +281,18 @@ void KPrivacyPostProcess::initialize_extended_safe_zones_cache(
     // Now extend the safe zones by adding random vertices that are not in any
     // safe zone currently.
     for (int t = 0; t < solution.size(); ++t) {
+        std::cout << "Extending safe zones at time " << t << "..." << std::endl;
         _initialize_current_agent_group_possible_extend_vertices(t);
+        std::cout << "Initialized groups" << std::endl;
+        int loop_idx = 0;
+        total_extension_time_microseconds = 0;
         bool done;
         do {
+            if (loop_idx % 1000 == 0) {
+                std::cout << "Extension loop iteration " << loop_idx
+                          << " at time " << t << "..." << std::endl;
+            }
+            loop_idx++;
             done = true;
             for (int agent_group_id = 0;
                  agent_group_id < get_num_of_agent_groups(ins->N, ins->k);
@@ -286,6 +305,16 @@ void KPrivacyPostProcess::initialize_extended_safe_zones_cache(
                 done = done && !picked;
             }
         } while (!done);
+        double average_extension_time =
+            static_cast<double>(total_extension_time_microseconds) /
+            static_cast<double>(loop_idx);
+        std::cout << "Finished extending safe zones after " << loop_idx
+                  << " iterations at time " << t
+                  << " --- avg extension session = " << average_extension_time
+                  << " microseconds." << std::endl;
+    }
+    for (TemporalGraph *tg : extended_safe_zones_list) {
+        tg->complete_temporal_vertex_timestamps();
     }
 }
 
@@ -326,8 +355,8 @@ std::tuple<Solution, Solution> solve_with_k_privacy_post_process(
     const Deadline *deadline, int seed, KPrivacyPostProcess **_kpp)
 {
     DistTable D(&ins);
-    KPrivacyPostProcess *kpp =
-        new KPrivacyPostProcess(&ins, &D, seed, verbose, deadline);
+    KPrivacyPostProcess *kpp = new KPrivacyPostProcess(
+        &ins, &D, previous_solution.size() - 1, seed, verbose, deadline);
     if (_kpp != nullptr) {
         *_kpp = kpp;  // Set the pointer to the KPrivacyPostProcess object
     } else {
@@ -426,8 +455,7 @@ bool KPrivacyPostProcess::validate_k_privacy_post_process_solution(
                     std::to_string(get_agent_group_id(i, ins.k)) +
                     " are not cached.");
             }
-            TemporalVertex *v = safe_zones->V[config[i]->id];
-            if (v->timestamps.find(t) == v->timestamps.end()) {
+            if (!safe_zones->timestamp_to_vertices_map[t][config[i]->id]) {
                 info(0, verbose,
                      "Agent " + std::to_string(i) +
                          " is not in its safe zone at time step " +

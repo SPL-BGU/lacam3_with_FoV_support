@@ -18,6 +18,7 @@
 #include "dist_table.hpp"
 #include "graph.hpp"
 #include "instance.hpp"
+#include "randomized_set.hpp"
 #include "temporal_graph.hpp"
 #include "utils.hpp"
 
@@ -58,31 +59,31 @@ class KPrivacyPostProcess
 
     /**
      * @brief A vector that holds possible vertices to extend the safe zone
-     * for each agent group.
-     * @note This is updated at each time step and cleared after the time step.
-     * It is used to hold the possible vertices that can be added to the safe
-     * zone of each agent group at the current time step.
+     * for each agent group for each timestamp.
+     * @note It is used to hold the possible vertices that can be added to the
+     * safe zone of each agent group at the each time step.
      */
-    std::vector<std::unordered_set<Vertex *>>
-        current_agent_group_possible_extend_vertices;
+    std::vector<std::vector<RandomizedSet>>
+        timestamp__agent_group__possible_extend_vertices;
 
     /**
-     * @brief A map that holds for each vertex, the set of agent groups
-     * that can extend it (i.e., the vertex is in their possible extend vertices
-     * set).
+     * @brief A map that holds for each timestamp, a vector of all vertices,
+     * and for each vertex - a vector of all agent groups that can extend it
+     * (i.e., the vertex is in their possible extend vertices set).
      *
-     * @note This is used to quickly check if a vertex is in the possible extend
-     * set of any agent group when extending safe zones at each time step.
+     * @note This is used to quickly go through all agent groups of a vertex
+     * to remove it from their possible extend vertices set when the vertex
+     * or its field of view is added to the safe zone of an agent group.
      */
-    std::unordered_map<Vertex *, std::unordered_set<int>>
-        vertex_in_agent_groups_map;
+    std::vector<std::vector<std::vector<int>>> timestamp__vertex__agent_groups;
 
     /**
      * @brief Adds a vertex to the extended_safe_zones for the given agent
      * group.
      *
-     * @note Handles updating the current_agent_group_possible_extend_vertices
-     * and vertex_in_agent_groups_map accordingly for all agents affected.
+     * @note Handles updating the
+     * timestamp__agent_group__possible_extend_vertices and
+     * timestamp__vertex__agent_groups accordingly for all agents affected.
      *
      * @param v The vertex to add.
      * @param agent_group_id The agent group id to add the vertex to.
@@ -95,8 +96,9 @@ class KPrivacyPostProcess
      * given agent group and adds it to the extended safe zones at time t, if
      * any such vertex exists.
      *
-     * @note Handles updating the current_agent_group_possible_extend_vertices
-     * and vertex_in_agent_groups_map accordingly for all agents affected.
+     * @note Handles updating the
+     * timestamp__agent_group__possible_extend_vertices and
+     * timestamp__vertex__agent_groups accordingly for all agents affected.
      *
      * @param agent_group_id The agent group id.
      * @param t The time step.
@@ -106,10 +108,10 @@ class KPrivacyPostProcess
     bool _choose_random_vertex_and_add_to_ES(int agent_group_id, int t);
 
     /**
-     * @brief Initializes the current_agent_group_possible_extend_vertices and
-     * vertex_in_agent_groups_map for the current time step.
+     * @brief Initializes the timestamp__agent_group__possible_extend_vertices
+     * and timestamp__vertex__agent_groups for the given time step.
      *
-     * @param t The current time step.
+     * @param t The given time step.
      */
     void _initialize_current_agent_group_possible_extend_vertices(int t);
 
@@ -142,8 +144,9 @@ class KPrivacyPostProcess
                                                   int t);
 
   public:
-    KPrivacyPostProcess(const Instance *instance, DistTable *_D, int seed = 0,
-                        int verbosity = 0, const Deadline *_deadline = nullptr);
+    KPrivacyPostProcess(const Instance *instance, DistTable *_D,
+                        int max_timestamp, int seed = 0, int verbosity = 0,
+                        const Deadline *_deadline = nullptr);
     ~KPrivacyPostProcess();
 
     /**

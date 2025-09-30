@@ -16,26 +16,31 @@
 
 #pragma once
 
+#include <boost/dynamic_bitset.hpp>
+
 #include "graph.hpp"
 #include "sipp.hpp"
 
 struct TemporalVertex {
-    Vertex *vertex;            // Pointer to the original vertex
-    std::set<int> timestamps;  // Timestamps when the vertex is available
-    TemporalVertex(Vertex *v) : vertex(v), timestamps() {}
+    Vertex *vertex;  // Pointer to the original vertex
+    boost::dynamic_bitset<>
+        timestamps;  // Timestamps when the vertex is available
+    TemporalVertex(Vertex *v, int max_timestamp)
+        : vertex(v), timestamps(max_timestamp + 1){};
 };
 
 using TemporalVertices = std::vector<TemporalVertex *>;
 
 struct TemporalGraph {
-    TemporalVertices V;      // Temporal vertices
-    Graph *G;                // Original graph
-    int max_timestamp = -1;  // Maximum timestamp in the graph
+    TemporalVertices V;  // Temporal vertices
+    Graph *G;            // Original graph
+    int max_timestamp;   // Maximum timestamp in the graph
     const Instance *ins;
-    // For quick lookup of vertices available at a specific timestamp
-    std::unordered_map<int, Vertices> timestemp_to_vertices_map;
+    // For quick lookup of vertices available at a specific timestamp holds the
+    // vertices indexes as a bitset for efficient storage and fast operations.
+    std::vector<boost::dynamic_bitset<>> timestamp_to_vertices_map;
 
-    TemporalGraph(const Instance *_ins);
+    TemporalGraph(const Instance *_ins, int _max_timestamp);
     TemporalGraph(const TemporalGraph &other);
 
     ~TemporalGraph();
@@ -43,10 +48,28 @@ struct TemporalGraph {
     /**
      * @brief Add a timestep to a vertex in the temporal graph.
      *
+     * @note add_to_temporal_vertex_timestamps is false
+     * only when we are extending the safe zones,
+     * since then we will use multiple threads and we don't want to have
+     * a race condition on the timestamps bitset of the TemporalVertex.
+     * On that case, we will update this bitset in the end of the extension
+     * process in a single thread using the function
+     * complete_temporal_vertex_timestamps.
+     *
      * @param v The vertex to which the timestep will be added.
      * @param timestamp The timestamp to be added to the vertex.
+     * @param add_to_temporal_vertex_timestamps Whether to add the timestamp to
+     * the TemporalVertex's timestamps bitset.
      */
-    void add_timestep_to_vertex(Vertex *v, int timestamp);
+    void add_timestep_to_vertex(Vertex *v, int timestamp,
+                                bool add_to_temporal_vertex_timestamps = true);
+
+    /**
+     * @brief Completes the timestamps bitset of each TemporalVertex
+     * in the temporal graph based on the timestamp_to_vertices_map.
+     *
+     */
+    void complete_temporal_vertex_timestamps();
 
     /**
      * @brief Convert the temporal graph to a safe interval table.
@@ -58,17 +81,6 @@ struct TemporalGraph {
      * for each vertex in the temporal graph.
      */
     SITable to_safe_interval_table() const;
-
-    /**
-     * @brief Calculates the distance from a given vertex to the closest safe
-     * zone in the given timestamp.
-     *
-     * @param v The vertex to calculate the distance from.
-     * @param timestamp The timestamp at which to calculate the distance.
-     * @return double The distance from the vertex to the closest safe zone at
-     * the given timestamp.
-     */
-    double distance_from_safe_zone(const Vertex *v, int timestamp) const;
 
     /**
      * @brief Checks if v is in the field of view of any vertex in the safe zone

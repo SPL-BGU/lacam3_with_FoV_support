@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <boost/dynamic_bitset.hpp>
 #include <set>
 #include <stdexcept>
 #include <vector>
@@ -169,7 +170,20 @@ inline size_t get_num_of_agent_groups(size_t N, size_t k)
  * @param field_radius - The field of view radius.
  * @return Vertices - The field of view from the current node location.
  */
-Vertices get_field_of_view(Graph *g, Vertex *node, int field_radius);
+Vertices get_field_of_view(Graph *g, const Vertex *node, int field_radius);
+
+/**
+ * @brief Same as the get_field_of_view but returns a bitset instead of a vector
+ * of vertices.
+ *
+ * @param g - The graph in which the nodes are from.
+ * @param node - The node to calculate the field of view from.
+ * @param field_radius - The field of view radius.
+ * @return boost::dynamic_bitset<> - The field of view from the current node
+ * location.
+ */
+boost::dynamic_bitset<> get_field_of_view_bitset(Graph *g, const Vertex *node,
+                                                 int field_radius);
 
 /**
  * @brief Checks if the two given nodes are within each others field of view.
