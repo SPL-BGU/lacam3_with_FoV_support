@@ -1,11 +1,13 @@
 #include "../include/k_privacy_post_process.hpp"
 
-#include <chrono>
+#include <boost/asio.hpp>
+#include <thread>
 
 #include "../include/field_of_view.hpp"
 #include "../include/metrics.hpp"
+#include "../include/planner.hpp"
 
-static int64_t total_extension_time_microseconds;
+int KPrivacyPostProcess::FLG_ES_THREADS = 1;
 
 KPrivacyPostProcess::KPrivacyPostProcess(const Instance *instance,
                                          DistTable *_D, int max_timestamp,
@@ -167,7 +169,6 @@ void KPrivacyPostProcess::_check_and_add_vertex_to_possible_extend(
     if (!valid) {
         return;
     }
-    auto start = std::chrono::high_resolution_clock::now();
     // Check that v is not in the field of view of any vertex in another
     // safe zone at time t (Rule 3).
     for (int other_agent_group_id = 0;
@@ -189,10 +190,6 @@ void KPrivacyPostProcess::_check_and_add_vertex_to_possible_extend(
             break;
         }
     }
-    auto end = std::chrono::high_resolution_clock::now();
-    total_extension_time_microseconds +=
-        std::chrono::duration_cast<std::chrono::microseconds>(end - start)
-            .count();
     if (valid) {
         bool inserted =
             timestamp__agent_group__possible_extend_vertices[t][agent_group_id]
@@ -252,13 +249,32 @@ bool KPrivacyPostProcess::_choose_random_vertex_and_add_to_ES(
     int vertex_id = -1;
     bool had_vertex =
         timestamp__agent_group__possible_extend_vertices[t][agent_group_id]
-            .getRandom(MT, &vertex_id);
+            .getRandom(timestamp__MT[t], &vertex_id);
     if (!had_vertex) {
         return false;  // No candidates to add
     }
     Vertex *selected_vertex = ins->G->V[vertex_id];
     _add_vertex_to_ES(selected_vertex, agent_group_id, t);
     return true;  // Successfully added a vertex to the safe zone
+}
+
+void KPrivacyPostProcess::_fill_ES_for_timestamp(int t)
+{
+    _initialize_current_agent_group_possible_extend_vertices(t);
+    bool done;
+    do {
+        done = true;
+        for (int agent_group_id = 0;
+             agent_group_id < get_num_of_agent_groups(ins->N, ins->k);
+             ++agent_group_id) {
+            if (is_expired(deadline)) {
+                return;  // Stop if the deadline is reached
+            }
+            bool picked =
+                _choose_random_vertex_and_add_to_ES(agent_group_id, t);
+            done = done && !picked;
+        }
+    } while (!done);
 }
 
 void KPrivacyPostProcess::initialize_extended_safe_zones_cache(
@@ -278,40 +294,31 @@ void KPrivacyPostProcess::initialize_extended_safe_zones_cache(
         extended_safe_zones_list.push_back(
             new TemporalGraph(*safe_zones));  // Create a copy for enhancement
     }
-    // Now extend the safe zones by adding random vertices that are not in any
-    // safe zone currently.
+    // Set the MT list for each timestamp
+    timestamp__MT.resize(solution.size());
     for (int t = 0; t < solution.size(); ++t) {
-        std::cout << "Extending safe zones at time " << t << "..." << std::endl;
-        _initialize_current_agent_group_possible_extend_vertices(t);
-        std::cout << "Initialized groups" << std::endl;
-        int loop_idx = 0;
-        total_extension_time_microseconds = 0;
-        bool done;
-        do {
-            if (loop_idx % 1000 == 0) {
-                std::cout << "Extension loop iteration " << loop_idx
-                          << " at time " << t << "..." << std::endl;
+        timestamp__MT[t] = std::mt19937(MT());  // Seed each timestamp MT
+    }
+    if (Planner::FLG_MULTI_THREAD && FLG_ES_THREADS > 1) {
+        // Manage threads using a thread pool
+        boost::asio::thread_pool pool(FLG_ES_THREADS);
+        for (int t = 0; t < solution.size(); ++t) {
+            if (is_expired(deadline)) {
+                return;  // Stop if the deadline is reached
             }
-            loop_idx++;
-            done = true;
-            for (int agent_group_id = 0;
-                 agent_group_id < get_num_of_agent_groups(ins->N, ins->k);
-                 ++agent_group_id) {
-                if (is_expired(deadline)) {
-                    return;  // Stop if the deadline is reached
-                }
-                bool picked =
-                    _choose_random_vertex_and_add_to_ES(agent_group_id, t);
-                done = done && !picked;
+            boost::asio::post(pool, [this, t]() { _fill_ES_for_timestamp(t); });
+        }
+        pool.join();
+    } else {
+        for (int t = 0; t < solution.size(); ++t) {
+            if (is_expired(deadline)) {
+                return;  // Stop if the deadline is reached
             }
-        } while (!done);
-        double average_extension_time =
-            static_cast<double>(total_extension_time_microseconds) /
-            static_cast<double>(loop_idx);
-        std::cout << "Finished extending safe zones after " << loop_idx
-                  << " iterations at time " << t
-                  << " --- avg extension session = " << average_extension_time
-                  << " microseconds." << std::endl;
+            _fill_ES_for_timestamp(t);
+        }
+    }
+    if (is_expired(deadline)) {
+        return;  // Stop if the deadline is reached
     }
     for (TemporalGraph *tg : extended_safe_zones_list) {
         tg->complete_temporal_vertex_timestamps();

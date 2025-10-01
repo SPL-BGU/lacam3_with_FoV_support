@@ -124,6 +124,10 @@ int main(int argc, char *argv[])
     program.add_argument("--checkpoints-duration")
         .help("for recording")
         .default_value(std::string("5"));
+
+    program.add_argument("--ppfpp-threads")
+        .help("number of threads for post-processing")
+        .default_value(std::string("10"));
     try {
         program.parse_known_args(argc, argv);
     } catch (const std::runtime_error &err) {
@@ -217,6 +221,9 @@ int main(int argc, char *argv[])
                   1000;
     Planner::CHECKPOINTS_DURATION =
         std::stof(program.get<std::string>("checkpoints-duration")) * 1000;
+
+    KPrivacyPostProcess::FLG_ES_THREADS =
+        flg_no_all ? 1 : std::stoi(program.get<std::string>("ppfpp-threads"));
 
     // solve
     if (planner_type == PlannerType::KPrivacyPostProcess) {

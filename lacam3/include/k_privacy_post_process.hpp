@@ -78,6 +78,12 @@ class KPrivacyPostProcess
     std::vector<std::vector<std::vector<int>>> timestamp__vertex__agent_groups;
 
     /**
+     * @brief A vector of random number generators, one for each timestamp.
+     *
+     */
+    std::vector<std::mt19937> timestamp__MT;
+
+    /**
      * @brief Adds a vertex to the extended_safe_zones for the given agent
      * group.
      *
@@ -143,7 +149,21 @@ class KPrivacyPostProcess
     void _check_and_add_vertex_to_possible_extend(Vertex *v, int agent_group_id,
                                                   int t);
 
+    /**
+     * @brief Fills the extended safe zones for all agent groups at the given
+     * timestamp t by repeatedly attempting to add random vertices from
+     * the possible extend vertices until no more can be added.
+     *
+     * @note This function is ran in parallel for all timestamps.
+     *
+     * @param t The given timestamp.
+     */
+    void _fill_ES_for_timestamp(int t);
+
   public:
+    // Number of threads to use for extending safe zones
+    static int FLG_ES_THREADS;
+
     KPrivacyPostProcess(const Instance *instance, DistTable *_D,
                         int max_timestamp, int seed = 0, int verbosity = 0,
                         const Deadline *_deadline = nullptr);
