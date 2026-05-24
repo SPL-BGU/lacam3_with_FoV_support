@@ -253,16 +253,21 @@ class KPrivacyPostProcess
      *
      * @param os The ostream to print into.
      * @param i The agent group to print it's safe zone.
+     * @param initial_safe_zones If true, prints the initial safe zones,
+     * otherwise prints the extended safe zones.
      */
-    void print_safe_zone(std::ostream &os, int i);
+    void print_safe_zone(std::ostream &os, int i,
+                         bool initial_safe_zones = false);
 
     /**
      * @brief Prints all of the safe zones that are cached into the ostream
      * given.
      *
      * @param os The ostream to print into.
+     * @param initial_safe_zones If true, prints the initial safe zones,
+     * otherwise prints the extended safe zones.
      */
-    void print_safe_zones(std::ostream &os);
+    void print_safe_zones(std::ostream &os, bool initial_safe_zones = false);
 };
 
 /**

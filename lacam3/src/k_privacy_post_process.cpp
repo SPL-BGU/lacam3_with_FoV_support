@@ -551,15 +551,21 @@ bool KPrivacyPostProcess::validate_k_privacy_post_process_solution(
     return true;  // The solution is valid
 }
 
-void KPrivacyPostProcess::print_safe_zone(std::ostream &os, int i)
+void KPrivacyPostProcess::print_safe_zone(std::ostream &os, int i,
+                                          bool initial_safe_zones)
 {
-    os << extended_safe_zones_list[i];
+    if (initial_safe_zones) {
+        os << _get_initial_safe_zones(i);
+    } else {
+        os << extended_safe_zones_list[i];
+    }
 }
 
-void KPrivacyPostProcess::print_safe_zones(std::ostream &os)
+void KPrivacyPostProcess::print_safe_zones(std::ostream &os,
+                                           bool initial_safe_zones)
 {
     for (int i = 0; i < get_num_of_agent_groups(ins->N, ins->k); i++) {
         os << "Safe zone for agent group " << i << ":" << std::endl;
-        print_safe_zone(os, i);
+        print_safe_zone(os, i, initial_safe_zones);
     }
 }

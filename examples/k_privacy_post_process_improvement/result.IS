@@ -8,7 +8,7 @@ makespan=10
 makespan_lb=8
 sum_of_loss=36
 sum_of_loss_lb=32
-comp_time=2
+comp_time=1
 seed=0
 
 starts=(0,0),(0,2),(0,4),(0,6),

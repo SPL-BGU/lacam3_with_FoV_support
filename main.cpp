@@ -65,8 +65,11 @@ int main(int argc, char *argv[])
         .help("previous solution file for k-privacy post-processing")
         .default_value(std::string(""));
     program.add_argument("-O", "--output-temporal-graph")
-        .help("output temporal graph file")
+        .help("output extended temporal graph file")
         .default_value(std::string("./build/temporal_graph.map"));
+    program.add_argument("-g", "--output-initial-temporal-graph")
+        .help("output initial temporal graph file")
+        .default_value(std::string("./build/initial_temporal_graph.map"));
     program.add_argument("-E", "--extended-safe-zones-output-name")
         .help("extended safe zones output file")
         .default_value(std::string("./build/result_extended_safe_zones.txt"));
@@ -188,6 +191,8 @@ int main(int argc, char *argv[])
     }
     const auto output_temporal_graph =
         program.get<std::string>("output-temporal-graph");
+    const auto output_initial_temporal_graph =
+        program.get<std::string>("output-initial-temporal-graph");
     const auto extended_safe_zones_output_filename =
         program.get<std::string>("extended-safe-zones-output-name");
 
@@ -250,6 +255,9 @@ int main(int argc, char *argv[])
         {
             std::ofstream temporal_graph_file(output_temporal_graph);
             kpp->print_safe_zones(temporal_graph_file);
+            std::ofstream initial_temporal_graph_file(
+                output_initial_temporal_graph);
+            kpp->print_safe_zones(initial_temporal_graph_file, true);
         }
         if (!kpp->validate_k_privacy_post_process_solution(
                 ins, std::get<0>(post_process_solutions), solution_found, true,
